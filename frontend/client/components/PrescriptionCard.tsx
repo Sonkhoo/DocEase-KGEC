@@ -9,9 +9,20 @@ import axios from "axios"
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi"
 import { parseEther } from "viem"
 import { contractabi } from "@/contract/contractABI"
+import { Trash2 } from "lucide-react"
+
+interface MedicationItem {
+  name: string;
+  dosage: string;
+}
 
 interface PrescriptionCardProps {
-  onSubmit?: (data: { patientName: string; medication: string; dosage: string; prescriptionImage: File | null }) => void
+  onSubmit?: (data: { 
+    patientName: string; 
+    doctorName: string;
+    medications: MedicationItem[];
+    prescriptionImage: File | null 
+  }) => void
   className?: string
 }
 
@@ -19,17 +30,53 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
   const { address, isConnected } = useAccount()
   const [form, setForm] = useState({
     patientName: "",
-    medication: "",
-    dosage: "",
+    doctorName: "",
+    medications: [{ name: "", dosage: "" }] as MedicationItem[],
     prescriptionImage: null as File | null,
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, files } = e.target
+    if (files) {
+      setForm({
+        ...form,
+        prescriptionImage: files[0],
+      })
+    } else {
+      setForm({
+        ...form,
+        [name]: value,
+      })
+    }
+  }
+
+  const handleMedicationChange = (index: number, field: keyof MedicationItem, value: string) => {
+    const updatedMedications = [...form.medications]
+    updatedMedications[index] = {
+      ...updatedMedications[index],
+      [field]: value
+    }
     setForm({
       ...form,
-      [name]: files ? files[0] : value,
+      medications: updatedMedications
     })
+  }
+
+  const addMedication = () => {
+    setForm({
+      ...form,
+      medications: [...form.medications, { name: "", dosage: "" }]
+    })
+  }
+
+  const removeMedication = (index: number) => {
+    if (form.medications.length > 1) {
+      const updatedMedications = form.medications.filter((_, i) => i !== index)
+      setForm({
+        ...form,
+        medications: updatedMedications
+      })
+    }
   }
 
   const uploadImageToPinata = async () => {
@@ -57,8 +104,8 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
   const uploadMetadataToPinata = async (imageHash: string) => {
     const metadata = {
       patientName: form.patientName,
-      medication: form.medication,
-      dosage: form.dosage,
+      doctorName: form.doctorName,
+      medications: form.medications,
       prescriptionImage: `ipfs://${imageHash}`,
     }
     
@@ -92,6 +139,13 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
       return
     }
 
+    // Validate medications
+    const validMedications = form.medications.filter(med => med.name.trim() !== "" && med.dosage.trim() !== "")
+    if (validMedications.length === 0) {
+      alert("Please add at least one medication with dosage.")
+      return
+    }
+
     try {
       // Step 1: Upload the prescription image file
       const imageHash = await uploadImageToPinata()
@@ -100,7 +154,7 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
         return
       }
       
-      // Step 2: Upload the metadata (including patient name, medication, dosage, and image reference)
+      // Step 2: Upload the metadata (including patient name, doctor name, medications, and image reference)
       const tokenURI = await uploadMetadataToPinata(imageHash)
       if (!tokenURI) {
         alert("Prescription metadata upload failed.")
@@ -112,7 +166,7 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
         address: contractAddress,
         abi: contractabi,
         functionName: "createToken",
-        args: [tokenURI, parseEther("400")], // Assuming no price for prescriptions
+        args: [tokenURI, parseEther("400")],
       })
 
       // Call the onSubmit prop if provided
@@ -149,29 +203,74 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
                 />
               </div>
               <div>
-                <Label htmlFor="medication" className="text-green-700">Medication</Label>
+                <Label htmlFor="doctor-name" className="text-green-700">Doctor Name</Label>
                 <Input
-                  id="medication"
-                  name="medication"
+                  id="doctor-name"
+                  name="doctorName"
                   type="text"
-                  placeholder="Medication Name"
+                  placeholder="Dr. Jane Smith"
                   required
                   className="mt-1 bg-white border-green-500/50 text-green-700 placeholder-green-400"
                   onChange={handleChange}
                 />
               </div>
-              <div>
-                <Label htmlFor="dosage" className="text-green-700">Dosage</Label>
-                <Input
-                  id="dosage"
-                  name="dosage"
-                  type="text"
-                  placeholder="500mg"
-                  required
-                  className="mt-1 bg-white border-green-500/50 text-green-700 placeholder-green-400"
-                  onChange={handleChange}
-                />
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-green-700 font-medium">Medications</Label>
+                  <Button 
+                    type="button" 
+                    onClick={addMedication} 
+                    className="px-2 py-1 h-8 text-sm bg-green-100 hover:bg-green-200 text-green-700"
+                  >
+                    + Add Medication
+                  </Button>
+                </div>
+                
+                {form.medications.map((medication, index) => (
+                  <div key={index} className="p-4 border border-green-200 rounded-md bg-green-50">
+                    <div className="flex justify-between items-center mb-2">
+                      <Label className="text-green-700 font-medium">Medication #{index + 1}</Label>
+                      {form.medications.length > 1 && (
+                        <Button 
+                          type="button" 
+                          onClick={() => removeMedication(index)} 
+                          className="h-8 w-8 p-0 bg-red-100 hover:bg-red-200 text-red-600"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <Label htmlFor={`medication-name-${index}`} className="text-green-700">Medication Name</Label>
+                        <Input
+                          id={`medication-name-${index}`}
+                          value={medication.name}
+                          type="text"
+                          placeholder="Medication Name"
+                          required
+                          className="mt-1 bg-white border-green-500/50 text-green-700 placeholder-green-400"
+                          onChange={(e) => handleMedicationChange(index, "name", e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`dosage-${index}`} className="text-green-700">Dosage</Label>
+                        <Input
+                          id={`dosage-${index}`}
+                          value={medication.dosage}
+                          type="text"
+                          placeholder="500mg"
+                          required
+                          className="mt-1 bg-white border-green-500/50 text-green-700 placeholder-green-400"
+                          onChange={(e) => handleMedicationChange(index, "dosage", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+              
               <div>
                 <Label htmlFor="prescription-image" className="text-green-700">Upload Prescription Image</Label>
                 <Input

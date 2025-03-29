@@ -14,15 +14,20 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { contractabi } from '@/contract/contractABI'
 import { ethers } from 'ethers'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS1 as `0x${string}`
+
+interface MedicationItem {
+  name: string;
+  dosage: string;
+}
 
 interface PrescriptionMetadata {
   tokenId: string;
   patientName: string;
-  medication: string;
-  dosage: string;
+  doctorName: string;
+  medications: MedicationItem[];
   image: string;
 }
 
@@ -53,6 +58,7 @@ export default function PrescriptionViewer() {
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null)
   const [signer, setSigner] = useState<ethers.Signer | null>(null)
   const [contract, setContract] = useState<ethers.Contract | null>(null)
+  const [expandedMedications, setExpandedMedications] = useState<boolean>(false)
 
   // Initialize provider, signer, and contract
   useEffect(() => {
@@ -127,11 +133,17 @@ export default function PrescriptionViewer() {
       const imageUrl = convertIpfsToHttp(metadata.prescriptionImage);
       console.log("Image URL:", imageUrl);
 
+      // Handle medications array or backward compatibility for older format
+      const medications = metadata.medications || [{ 
+        name: metadata.medication || '', 
+        dosage: metadata.dosage || '' 
+      }];
+
       return {
         tokenId: tokenId.toString(),
         patientName: metadata.patientName || `Prescription ${tokenId}`,
-        medication: metadata.medication || '',
-        dosage: metadata.dosage || '',
+        doctorName: metadata.doctorName || 'Unknown Doctor',
+        medications: medications,
         image: imageUrl,
       };
     } catch (error) {
@@ -157,6 +169,12 @@ export default function PrescriptionViewer() {
       setError("Failed to execute sale. Please try again.")
     }
   }
+
+  // Get primary medication for card display
+  const getPrimaryMedication = (medications: MedicationItem[]) => {
+    if (!medications || medications.length === 0) return { name: 'No medication', dosage: '' };
+    return medications[0];
+  };
 
   // Render loading state
   if (loading) {
@@ -187,76 +205,84 @@ export default function PrescriptionViewer() {
         </h1>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6 p-4">
-          {prescriptions.map((prescription) => (
-            <motion.div
-              key={prescription.tokenId}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="w-full h-full"
-            >
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-500/[0.2] hover:shadow-2xl hover:shadow-green-500/[0.1] transition-all duration-300 h-full flex flex-col">
-                <div className="flex flex-col gap-4">
-                  <div 
-                    className="w-full cursor-pointer"
-                    onClick={() => setSelectedPrescription(prescription)}
-                  >
-                    <div className="aspect-[4/3] w-full relative overflow-hidden rounded-xl">
-                      <img
-                        src={prescription.image}
-                        className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 hover:scale-110"
-                        alt={prescription.patientName}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600 line-clamp-2">
-                      {prescription.patientName}
-                    </h3>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-500 font-medium">Medication:</span>
-                        <span className="text-green-600 line-clamp-1">{prescription.medication}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-500 font-medium">Dosage:</span>
-                        <span className="text-green-600 line-clamp-1">{prescription.dosage}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-500 font-medium">Price:</span>
-                        <span className="text-green-600 font-semibold">{prescription.price}</span>
+          {prescriptions.map((prescription) => {
+            const primaryMedication = getPrimaryMedication(prescription.medications);
+            const medicationCount = prescription.medications.length;
+            
+            return (
+              <motion.div
+                key={prescription.tokenId}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="w-full h-full"
+              >
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-500/[0.2] hover:shadow-2xl hover:shadow-green-500/[0.1] transition-all duration-300 h-full flex flex-col">
+                  <div className="flex flex-col gap-4">
+                    <div 
+                      className="w-full cursor-pointer"
+                      onClick={() => setSelectedPrescription(prescription)}
+                    >
+                      <div className="aspect-[4/3] w-full relative overflow-hidden rounded-xl">
+                        <img
+                          src={prescription.image}
+                          className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 hover:scale-110"
+                          alt={prescription.patientName}
+                        />
                       </div>
                     </div>
+                    <div className="flex flex-col gap-2">
+                      <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600 line-clamp-2">
+                        {prescription.patientName}
+                      </h3>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-500 font-medium">Doctor:</span>
+                          <span className="text-green-600 line-clamp-1">{prescription.doctorName}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-500 font-medium">Medication:</span>
+                          <span className="text-green-600 line-clamp-1">
+                            {primaryMedication.name}
+                            {medicationCount > 1 && ` +${medicationCount - 1} more`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-500 font-medium">Dosage:</span>
+                          <span className="text-green-600 line-clamp-1">{primaryMedication.dosage}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex gap-3 mt-auto pt-4">
-                  <Button
-                    className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm font-medium transition-colors duration-300"
-                    onClick={() => setSelectedPrescription(prescription)}
-                  >
-                    View Details
-                  </Button>
-                  <Button
-                    className="flex-1 bg-white text-green-700 text-sm font-medium transition-colors duration-300 hover:bg-green-50 border border-green-200"
-                    onClick={() => {
-                      setSellingPrescription(prescription)
-                      setSellPrice('')
-                    }}
-                  >
-                    Sell
-                  </Button>
+                  <div className="flex gap-3 mt-auto pt-4">
+                    <Button
+                      className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-sm font-medium transition-colors duration-300"
+                      onClick={() => setSelectedPrescription(prescription)}
+                    >
+                      View Details
+                    </Button>
+                    <Button
+                      className="flex-1 bg-white text-green-700 text-sm font-medium transition-colors duration-300 hover:bg-green-50 border border-green-200"
+                      onClick={() => {
+                        setSellingPrescription(prescription)
+                        setSellPrice('')
+                      }}
+                    >
+                      Sell
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </div>
 
         {/* Dialog for Prescription Details */}
         <AnimatePresence>
           {selectedPrescription && (
             <Dialog open={!!selectedPrescription} onOpenChange={() => setSelectedPrescription(null)}>
-              <DialogContent className="sm:max-w-[425px] bg-gradient-to-br from-green-50 to-green-100 text-green-700 border border-green-500/20">
+              <DialogContent className="sm:max-w-[525px] bg-gradient-to-br from-green-50 to-green-100 text-green-700 border border-green-500/20">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600">
                     {selectedPrescription.patientName}
@@ -272,12 +298,29 @@ export default function PrescriptionViewer() {
                     className="w-full h-64 object-cover rounded-lg mb-4 shadow-lg shadow-green-500/20" 
                   />
                   <div className="mb-4">
-                    <h3 className="text-green-700 font-semibold mb-1">Medication:</h3>
-                    <p className="text-green-600">{selectedPrescription.medication}</p>
+                    <h3 className="text-green-700 font-semibold mb-1">Doctor:</h3>
+                    <p className="text-green-600">{selectedPrescription.doctorName}</p>
                   </div>
                   <div className="mb-4">
-                    <h3 className="text-green-700 font-semibold mb-1">Dosage:</h3>
-                    <p className="text-green-600">{selectedPrescription.dosage}</p>
+                    <h3 className="text-green-700 font-semibold mb-1">Medications:</h3>
+                    <div className="space-y-3 mt-2 max-h-48 overflow-y-auto pr-2">
+                      {selectedPrescription.medications.map((med, index) => (
+                        <div 
+                          key={index} 
+                          className="bg-white rounded-lg p-3 shadow-sm border border-green-200"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-medium text-green-700">{med.name}</p>
+                              <p className="text-green-600 text-sm">{med.dosage}</p>
+                            </div>
+                            <div className="bg-green-100 text-green-700 rounded-full h-6 w-6 flex items-center justify-center font-medium text-xs">
+                              {index + 1}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <p className="text-green-500 font-semibold">Price: {selectedPrescription.price}</p>
                 </div>
@@ -314,15 +357,7 @@ export default function PrescriptionViewer() {
                     alt={sellingPrescription.patientName} 
                     className="w-full h-64 object-cover rounded-lg mb-4 shadow-lg shadow-green-500/20" 
                   />
-                  <Label htmlFor="price" className="text-green-700">Price (ETH)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    value={sellPrice}
-                    onChange={(e) => setSellPrice(e.target.value)}
-                    placeholder="Enter price in ETH"
-                    className="bg-white text-green-700 border-green-500/50 mt-2"
-                  />
+                  
                 </div>
                 <div className="mt-6 flex justify-end space-x-2">
                   <Button 
