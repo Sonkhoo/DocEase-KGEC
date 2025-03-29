@@ -7,15 +7,37 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { contractaddress2 } from "@/contract/contractABI2";
 import { contractABI2 } from "@/contract/contractABI2";
-import { useAuth } from "@/app/_context/Authcontext"; // Import AuthContext
-import { toast } from 'sonner'; // For toast notifications
+import { useUser } from "@/app/_context/UserContext";
+import { toast } from 'sonner';
+import axios from 'axios';
+import { use } from 'react';
 
-export default function AppointmentPage({ params }: { params: { doctorId: string } }) {
-  const { user } = useAuth(); // Get the logged-in user from AuthContext
+interface Doctor {
+  _id: string;
+  name: string;
+  specialty: string[];
+  experience: number;
+  hospital_affiliation: string;
+  consultation_fee: number;
+  availability: {
+    day: string;
+    start_time: string;
+    end_time: string;
+    recurring: boolean;
+  }[];
+  profileImage: {
+    url: string;
+  };
+}
+
+export default function AppointmentPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const { user } = useUser();
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [date, setDate] = useState<Date | null>(null);
   const [time, setTime] = useState<string>();
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -23,10 +45,80 @@ export default function AppointmentPage({ params }: { params: { doctorId: string
   const [paymentStatus, setPaymentStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [error, setError] = useState<string>("");
 
+  // Fetch doctor data
+  useEffect(() => {
+    const fetchDoctorData = async () => {
+      try {
+        const response = await axios.get(`http://localhost:8000/api/v1/doctors/profile/${resolvedParams.id}`);
+        console.log('Doctor data received:', response.data.data.user);
+        setDoctor(response.data.data.user);
+      } catch (error) {
+        console.error('Error fetching doctor data:', error);
+        toast.error('Failed to load doctor information');
+      }
+    };
+
+    fetchDoctorData();
+  }, [resolvedParams.id]);
+
+  // Add console log for doctor state
+  useEffect(() => {
+    console.log('Current doctor state:', doctor);
+  }, [doctor]);
+
+  // Get available dates based on doctor's availability
+  const getAvailableDates = () => {
+    if (!doctor) return [];
+    
+    const dates = [];
+    const today = new Date();
+    
+    // Get next 14 days
+    for (let i = 0; i < 14; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+      
+      // Check if doctor has availability for this day
+      const hasAvailability = doctor.availability.some(a => a.day === dayOfWeek);
+      
+      if (hasAvailability) {
+        dates.push(date);
+      }
+    }
+    
+    return dates;
+  };
+
+  // Get available time slots based on selected date
+  const getAvailableTimeSlots = () => {
+    if (!doctor || !date) return [];
+    
+    const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const doctorAvailability = doctor.availability.find(a => a.day === dayOfWeek);
+    
+    if (!doctorAvailability) return [];
+
+    const slots = [];
+    const startTime = new Date(`1970-01-01T${doctorAvailability.start_time}`);
+    const endTime = new Date(`1970-01-01T${doctorAvailability.end_time}`);
+    
+    while (startTime < endTime) {
+      slots.push(startTime.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      }));
+      startTime.setMinutes(startTime.getMinutes() + 30);
+    }
+    
+    return slots;
+  };
+
   // Token contract details
   const tokenAddress = contractaddress2; // Replace with your token contract address
   const tokenABI = contractABI2;
-  console.log(params.doctorId);
+  // console.log(params.doctorId);
   const handlePayment = async () => {
     if (!window.ethereum) {
       setError("Please install MetaMask to make a payment");
@@ -80,7 +172,6 @@ export default function AppointmentPage({ params }: { params: { doctorId: string
 
 // Update bookAppointment to throw errors
 const bookAppointment = async () => {
-
   if (!user?._id || !date || !time) {
     console.log(user?._id, date, time);
     console.error("ebaba");
@@ -90,14 +181,14 @@ const bookAppointment = async () => {
     throw new Error("User must be logged in to book an appointment");
   }
 
-  const response = await fetch("http://localhost:8001/api/v1/patients/book/appointment", {
+  const response = await fetch("http://localhost:8000/api/v1/patients/book/appointment", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       userId: user.id,
-      docId: params.doctorId,
+      docId: resolvedParams.id,
       slotDate: date ? date.toISOString().split("T")[0] : '',
       slotTime: time,
       amount: 100
@@ -136,22 +227,6 @@ const bookAppointment = async () => {
     },
   ];
 
-  // Get the current date and the next 14 days
-  const today = new Date();
-  const futureDate = new Date();
-  futureDate.setDate(today.getDate() + 14);
-
-  // Generate an array of dates for the next 14 days
-  const getDates = () => {
-    const dates = [];
-    for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      dates.push(date);
-    }
-    return dates;
-  };
-
   // Format the date for display
   const formatDate = (date: Date) => {
     return date.toLocaleDateString("en-US", {
@@ -164,36 +239,41 @@ const bookAppointment = async () => {
   return (
     <div className="min-h-screen bg-green-50">
       <div className="container mx-auto py-8 px-4">
-        <Card className="mb-8">
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row gap-6">
-              <div className="w-full md:w-1/4">
-                <Image
-                  src="/placeholder.svg?height=200&width=200"
-                  alt="Doctor profile"
-                  width={200}
-                  height={200}
-                  className="rounded-lg"
-                />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <h2 className="text-2xl font-bold">Dr. Richard James</h2>
-                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Verified</Badge>
+        {doctor ? (
+          <Card className="mb-8">
+            <CardContent className="p-6 mt-[6.9rem]">
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="w-full md:w-1/4">
+                  <Image
+                    src={doctor.profileImage?.url || "/placeholder.svg?height=200&width=200"}
+                    alt={`${doctor.name}'s profile`}
+                    width={200}
+                    height={200}
+                    className="rounded-lg"
+                  />
                 </div>
-                <p className="text-gray-600 mb-4">MBBS - General Physician • 5 years exp</p>
-                <p className="text-gray-600 mb-4">
-                  Specialized in providing comprehensive healthcare solutions, focusing on preventive medicine and
-                  effective treatment strategies.
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold">Appointment Fee:</span>
-                  <span className="text-green-700">100 DocTokens</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h2 className="text-2xl font-bold">Dr. {doctor?.name || 'Loading...'}</h2>
+                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Verified</Badge>
+                  </div>
+                  <p className="text-gray-600 mb-4">
+                    {doctor?.specialty?.join(', ') || 'No specialties listed'} • {doctor?.experience || 0} years exp
+                  </p>
+                  <p className="text-gray-600 mb-4">
+                    {doctor?.hospital_affiliation || 'No hospital affiliation listed'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">Appointment Fee:</span>
+                    <span className="text-green-700">{doctor?.consultation_fee || 0} DocTokens</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="text-center py-8">Loading doctor information...</div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-8">
           <Card>
@@ -201,12 +281,12 @@ const bookAppointment = async () => {
               <CardTitle>Select Date & Time</CardTitle>
               <CardDescription>Choose your preferred appointment slot</CardDescription>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-6 mt-3">
               <div className="space-y-6">
                 <div className="space-y-2">
                   <label className="font-medium">Select Date</label>
                   <div className="grid grid-cols-7 gap-2">
-                    {getDates().map((dateObj, index) => (
+                    {getAvailableDates().map((dateObj, index) => (
                       <button
                         key={index}
                         onClick={() => setDate(dateObj)}
@@ -234,7 +314,7 @@ const bookAppointment = async () => {
                       <SelectValue placeholder="Select time" />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableTimes.map((t) => (
+                      {getAvailableTimeSlots().map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}
                         </SelectItem>
@@ -245,7 +325,7 @@ const bookAppointment = async () => {
 
                 <Button
                   className="w-full bg-green-600 hover:bg-green-700"
-                  disabled={!date || !time}
+                  disabled={!date || !time || !doctor}
                   onClick={() => setIsPaymentModalOpen(true)}
                 >
                   Book Appointment
@@ -288,11 +368,11 @@ const bookAppointment = async () => {
             <DialogHeader>
               <DialogTitle>Confirm Appointment</DialogTitle>
               <DialogDescription>
-                Please confirm your appointment with Dr. Richard James
+                Please confirm your appointment with Dr. {doctor?.name}
                 <div className="mt-4 space-y-2">
                   <p>Date: {date ? formatDate(date) : ""}</p>
                   <p>Time: {time}</p>
-                  <p className="font-semibold">Amount: 100 DocTokens</p>
+                  <p className="font-semibold">Amount: {doctor?.consultation_fee || 0} DocTokens</p>
                 </div>
               </DialogDescription>
             </DialogHeader>
@@ -329,6 +409,4 @@ const bookAppointment = async () => {
       </div>
     </div>
   );
-
-
 }

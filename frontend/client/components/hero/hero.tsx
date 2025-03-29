@@ -34,7 +34,7 @@ export default function Hero() {
             className="text-gray-600 text-xl mb-8 max-w-2xl mx-auto"
           >
             Securely manage patient records, streamline appointments, and access cutting-edge AI diagnostics with
-            MediConnect.
+            DocEase.
           </motion.p>
 
           <motion.div

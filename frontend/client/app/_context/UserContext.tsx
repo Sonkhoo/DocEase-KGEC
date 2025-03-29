@@ -68,6 +68,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Handle Google login state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const userParam = params.get('user');
+      
+      if (userParam) {
+        try {
+          const userData = JSON.parse(decodeURIComponent(userParam));
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
+          // Clean up the URL
+          window.history.replaceState({}, '', '/dashboard/user');
+        } catch (error) {
+          console.error('Error parsing Google user data:', error);
+        }
+      }
+    }
+  }, []);
+
   const clearError = () => setError(null);
 
   const register = async (userData: RegistrationData) => {
@@ -99,7 +119,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const response = await axios.post('http://localhost:8001/api/v1/patients/register', userData);
+      const response = await axios.post('http://localhost:8000/api/v1/patients/register', userData);
 
       if (response.data.data) {
         setUser(response.data.data);
@@ -131,7 +151,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         throw new Error('Please provide all required fields');
       }
 
-      const response = await axios.post('http://localhost:8001/api/v1/patients/login', loginData, {
+      const response = await axios.post('http://localhost:8000/api/v1/patients/login', loginData, {
         withCredentials: true,
       });
 
@@ -144,6 +164,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.message || 'Login failed');
+        console.log(err.response?.data?.message);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {

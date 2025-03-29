@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 // Socket.io server URL
-const SOCKET_URL = 'http://localhost:8001'
+const SOCKET_URL = 'http://localhost:8000'
 
 // Message interface
 interface Message {
