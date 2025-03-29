@@ -8,10 +8,12 @@ import Link from "next/link"
 import type React from "react"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useDoctorAuth } from "@/app/_context/Doctorcontext" // Import the DoctorAuthContext
+import { useUser } from "@/app/_context/UserContext" // Import the UserContext
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
-  const { doctor, access_token, logoutDoctor } = useDoctorAuth() // Use the DoctorAuthContext
+  const { doctor, logoutDoctor } = useDoctorAuth() // Use the DoctorAuthContext
+  const { user, logout, isAuthenticated } = useUser() // Use the UserContext
 
   return (
     <div className="fixed top-0 left-0 right-0 z-50 px-4 py-4">
@@ -49,9 +51,31 @@ export default function Navbar() {
                 Logout
               </Button>
             </>
-          ) : (
-            // If the doctor is not logged in, show sign-up and login buttons
+          ) : isAuthenticated ? (
+            // If a regular user is logged in, show profile, username, and logout buttons
             <>
+              <Link href="/dashboard/user">
+                <Button variant="outline" className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white">
+                  <User className="w-4 h-4 mr-2" />
+                  {user?.name} {/* Display the user's name */}
+                </Button>
+              </Link>
+              <Button
+                variant="outline"
+                className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
+                onClick={logout}
+              >
+                Logout
+              </Button>
+            </>
+          ) : (
+            // If neither doctor nor user is logged in, show sign-up buttons
+            <>
+              <Link href="/user/login">
+                <Button variant="outline" className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white">
+                  User Login
+                </Button>
+              </Link>
               <Link href="/user/register">
                 <Button variant="outline" className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white">
                   <User className="w-4 h-4 mr-2" />
@@ -127,10 +151,41 @@ export default function Navbar() {
                     Logout
                   </Button>
                 </>
-              ) : (
-                // If the doctor is not logged in, show sign-up and login buttons
+              ) : isAuthenticated ? (
+                // If a regular user is logged in, show dashboard and logout buttons
                 <>
-                  <Link href="/userlogin" onClick={() => setIsOpen(false)}>
+                  <Link href="/dashboard/user" onClick={() => setIsOpen(false)}>
+                    <Button
+                      variant="outline"
+                      className="w-full border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
+                    >
+                      <User className="w-4 h-4 mr-2" />
+                      {user?.name} {/* Display the user's name */}
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    className="w-full border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
+                    onClick={() => {
+                      logout()
+                      setIsOpen(false)
+                    }}
+                  >
+                    Logout
+                  </Button>
+                </>
+              ) : (
+                // If neither doctor nor user is logged in, show sign-up and login buttons
+                <>
+                  <Link href="/user/login" onClick={() => setIsOpen(false)}>
+                    <Button
+                      variant="outline"
+                      className="w-full border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
+                    >
+                      User Login
+                    </Button>
+                  </Link>
+                  <Link href="/user/register" onClick={() => setIsOpen(false)}>
                     <Button
                       variant="outline"
                       className="w-full border-green-600 text-green-600 hover:bg-green-600 hover:text-white"
@@ -139,7 +194,7 @@ export default function Navbar() {
                       Sign Up
                     </Button>
                   </Link>
-                  <Link href="/doctorlogin" onClick={() => setIsOpen(false)}>
+                  <Link href="/doctor/register" onClick={() => setIsOpen(false)}>
                     <Button
                       variant="outline"
                       className="w-full border-green-600 text-green-600 hover:bg-green-600 hover:text-white"

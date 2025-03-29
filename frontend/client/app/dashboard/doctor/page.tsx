@@ -140,7 +140,7 @@ export default function DoctorDashboard() {
       <div className="absolute inset-0 overflow-hidden">
         <FloatingPaper count={8} />
       </div>
-      <Navbar />
+     
       
       <div className="relative backdrop-blur-sm bg-white/20">
         {/* Header Section */}

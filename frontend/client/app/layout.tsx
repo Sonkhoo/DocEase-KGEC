@@ -9,6 +9,7 @@ import { CopilotPopup } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css"; 
 
 import { UserProvider } from "./_context/UserContext"
+import Navbar from "@/components/common/navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <UserProvider>
-          <Providers><DoctorAuthProvider><AuthProvider>{children}
+          <Providers><DoctorAuthProvider><AuthProvider> <Navbar/>{children}
            
           </AuthProvider></DoctorAuthProvider></Providers>
         </UserProvider>
