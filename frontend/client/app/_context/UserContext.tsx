@@ -99,7 +99,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const response = await axios.post('http://localhost:8001/api/v1/patients/register', userData);
+      const response = await axios.post('http://localhost:8000/api/v1/patients/register', userData);
 
       if (response.data.data) {
         setUser(response.data.data);
@@ -131,7 +131,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         throw new Error('Please provide all required fields');
       }
 
-      const response = await axios.post('http://localhost:8001/api/v1/patients/login', loginData, {
+      const response = await axios.post('http://localhost:8000/api/v1/patients/login', loginData, {
         withCredentials: true,
       });
 

@@ -7,9 +7,8 @@ import { DoctorAuthProvider } from "./_context/Doctorcontext";
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotPopup } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css"; 
-
+import FloatingChatButton from "@/components/FloatingChatButton";
 import { UserProvider } from "./_context/UserContext"
-import Navbar from "@/components/common/navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,8 +36,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <UserProvider>
-          <Providers><DoctorAuthProvider><AuthProvider> <Navbar/>{children}
-           
+          <Providers><DoctorAuthProvider><AuthProvider>{children}
+            <FloatingChatButton/>
           </AuthProvider></DoctorAuthProvider></Providers>
         </UserProvider>
       </body>

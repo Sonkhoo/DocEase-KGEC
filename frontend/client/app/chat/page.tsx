@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Loader2, Video, Send, CheckCircle, Phone, Calendar, FileText } from "lucide-react"
 import { PrescriptionCard } from "@/components/PrescriptionCard"
+import MyPrescriptions from "@/components/PrescriptionViewerMine"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 
@@ -277,37 +278,8 @@ export default function DoctorChatInterface() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                <PrescriptionCard />
-                <div className="mt-4">
-                  <Button
-                    onClick={handleMintNFT}
-                    disabled={isMinting || isMinted || !isConnected}
-                    className="w-full bg-green-600 hover:bg-green-700 transition-colors relative"
-                  >
-                    {isMinting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Minting...
-                      </>
-                    ) : isMinted ? (
-                      <>
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Minted Successfully
-                      </>
-                    ) : (
-                      <>Mint Prescription NFT</>
-                    )}
-
-                    {isMinted && (
-                      <motion.div
-                        className="absolute inset-0 bg-green-500 opacity-20 rounded-md"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: [0, 1.5, 1] }}
-                        transition={{ duration: 0.5 }}
-                      />
-                    )}
-                  </Button>
-                </div>
+                <MyPrescriptions/>
+               
               </CardContent>
             </Card>
           </motion.div>

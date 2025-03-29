@@ -1,149 +1,148 @@
-'use client';
-import { useState } from 'react';
+"use client"
+import { useState, useRef, useEffect } from "react"
+import type React from "react"
 
-// SVG icons
-const ChatIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className="w-8 h-8"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-    />
-  </svg>
-);
+import { motion, AnimatePresence } from "framer-motion"
+import { MessageSquare, X, Send, Loader2 } from "lucide-react"
 
-const CloseIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className="w-6 h-6"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M6 18L18 6M6 6l12 12"
-    />
-  </svg>
-);
+interface Message {
+  id: number
+  text: string
+  isBot: boolean
+}
 
 export default function FloatingChatButton() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<{ id: number; text: string; isBot: boolean }[]>([]);
+  const [isOpen, setIsOpen] = useState(false)
+  const [message, setMessage] = useState("")
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isTyping, setIsTyping] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!message.trim()) return;
+    e.preventDefault()
+    if (!message.trim()) return
 
-    // Add user message
     const newMessage = {
       id: Date.now(),
       text: message,
       isBot: false,
-    };
-    setMessages(prev => [...prev, newMessage]);
-    
-    try {
-      // Call FastAPI endpoint
-      const response = await fetch(`http://127.0.0.1:5000/chat/?query=${encodeURIComponent(message)}`)
-      const data = await response.json();
-
-      console.log
-      
-      // Add bot response
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          text: data.response,
-          isBot: true,
-        }
-      ]);
-    } catch (error) {
-      setMessages(prev => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          text: "Sorry, I'm having trouble connecting to the assistant.",
-          isBot: true,
-        }
-      ]);
     }
-    
-    setMessage('');
-  };
+    setMessages((prev) => [...prev, newMessage])
+    setMessage("")
+    setIsTyping(true)
+
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/chat/?query=${encodeURIComponent(message)}`)
+      const data = await response.json()
+
+      setTimeout(() => {
+        setIsTyping(false)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            text: data.response,
+            isBot: true,
+          },
+        ])
+      }, 1000)
+    } catch (error) {
+      setTimeout(() => {
+        setIsTyping(false)
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            text: "Sorry, I'm having trouble connecting to the assistant.",
+            isBot: true,
+          },
+        ])
+      }, 1000)
+    }
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="bg-blue-500 text-white p-4 rounded-full shadow-lg hover:bg-blue-600 transition-all"
-        >
-          <ChatIcon />
-        </button>
-      )}
+      <AnimatePresence>
+        {!isOpen && (
+          <motion.button
+            onClick={() => setIsOpen(true)}
+            className="bg-gradient-to-r from-green-300 to-green-400 text-white p-4 rounded-full shadow-lg hover:shadow-xl transition-all"
+            initial={{ scale: 0, rotate: -180 }}
+            animate={{ scale: 1, rotate: 0 }}
+            exit={{ scale: 0, rotate: 180 }}
+            whileHover={{ scale: 1.1, rotate: 5 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <MessageSquare className="w-8 h-8" />
+          </motion.button>
+        )}
+      </AnimatePresence>
 
-      {isOpen && (
-        <div className="bg-white rounded-lg shadow-xl w-96 max-h-[80vh] flex flex-col">
-          <div className="flex justify-between items-center p-4 border-b">
-            <h2 className="text-lg font-semibold">Medical Assistant</h2>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <CloseIcon />
-            </button>
-          </div>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            className="bg-white rounded-2xl shadow-2xl overflow-hidden w-96 max-h-[80vh] flex flex-col"
+            initial={{ opacity: 0, y: 100, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 100, scale: 0.8 }}
+          >
+            <motion.div className="flex justify-between items-center p-4 border-b bg-gradient-to-r from-green-300 to-green-400 text-white">
+              <h2 className="text-lg font-semibold">Medical Assistant</h2>
+              <motion.button onClick={() => setIsOpen(false)} className="text-white p-1">
+                <X className="w-6 h-6" />
+              </motion.button>
+            </motion.div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-lg p-3 ${
-                    msg.isBot
-                      ? 'bg-gray-100 text-gray-800'
-                      : 'bg-blue-500 text-white'
-                  }`}
-                >
-                  <p className="text-sm">{msg.text}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+              {messages.length === 0 && (
+                <p className="text-center text-gray-500 py-8">Ask me any health-related questions!</p>
+              )}
+              {messages.map((msg) => (
+                <motion.div key={msg.id} className={`flex ${msg.isBot ? "justify-start" : "justify-end"}`}>
+                  <div className={`max-w-[80%] rounded-2xl p-3 ${msg.isBot ? "bg-white text-gray-800 border border-gray-200" : "bg-green-300 text-white"}`}>
+                    <p className="text-sm">{msg.text}</p>
+                  </div>
+                </motion.div>
+              ))}
 
-          <form onSubmit={handleSubmit} className="p-4 border-t">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type your health question..."
-                className="flex-1 rounded-lg border p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-              >
-                Send
-              </button>
+              {isTyping && (
+                <motion.div className="flex justify-start">
+                  <div className="bg-white text-gray-800 rounded-2xl p-3 border border-gray-200">
+                    <Loader2 className="w-4 h-4 animate-spin text-green-400" />
+                    <p className="text-sm text-gray-500">Typing...</p>
+                  </div>
+                </motion.div>
+              )}
+
+              <div ref={messagesEndRef} />
             </div>
-          </form>
-        </div>
-      )}
+
+            <motion.form onSubmit={handleSubmit} className="p-4 border-t bg-white">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Type your health question..."
+                  className="flex-1 rounded-full border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                <button
+                  type="submit"
+                  className="bg-gradient-to-r from-green-300 to-green-400 text-white p-3 rounded-full hover:shadow-md disabled:opacity-70"
+                  disabled={!message.trim() || isTyping}
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  );
+  )
 }
