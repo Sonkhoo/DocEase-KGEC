@@ -123,6 +123,7 @@ export function UserRegistrationForm() {
                   type="button" 
                   className="w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 shadow-sm flex items-center justify-center gap-2 py-5 relative overflow-hidden group"
                   variant="outline"
+                  onClick={() => window.location.href = 'http://localhost:8000/api/v1/patients/auth/google'}
                 >
                   <div className="absolute inset-0 w-3 bg-gradient-to-r from-green-600 to-green-500 transition-all duration-[250ms] ease-out group-hover:w-full opacity-10" />
                   <svg className="w-5 h-5" viewBox="0 0 24 24">

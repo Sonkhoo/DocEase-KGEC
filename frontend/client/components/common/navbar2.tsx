@@ -22,7 +22,7 @@ export default function Navbar2() {
       >
         <Link href="/" className="flex items-center space-x-2">
           <Stethoscope className="w-8 h-8 text-green-600" />
-          <span className="text-green-800 font-medium text-xl">MediConnect</span>
+          <span className="text-green-800 font-medium text-xl">DocEase</span>
         </Link>
 
         <div className="hidden md:flex items-center space-x-8">

@@ -37,23 +37,34 @@ router.route("/auth/google").get(passport.authenticate("google", { scope: ["prof
 
 router.route("/auth/google/callback").get(passport.authenticate("google", { failureRedirect: "/login", session: false }), 
     (req, res) => {
-        const { accessToken, refreshToken } = req.user;
-            // Set tokens as HttpOnly cookies
-        res.cookie("accessToken", accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "Strict",
-        maxAge: 15 * 60 * 1000, // 15 minutes
-        });
-  
-        res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "Strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        });
+        try {
+            if (!req.user) {
+                return res.redirect("http://localhost:3000/doctor/login?error=Authentication failed");
+            }
 
-        res.redirect("/dashboard"); 
+            const { accessToken, refreshToken, user } = req.user;
+            
+            // Set tokens as HttpOnly cookies
+            res.cookie("accessToken", accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict",
+                maxAge: 15 * 60 * 1000, // 15 minutes
+            });
+      
+            res.cookie("refreshToken", refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            });
+
+            // Redirect to frontend dashboard with user data
+            res.redirect(`http://localhost:3000/dashboard/doctor?user=${encodeURIComponent(JSON.stringify(user))}`); 
+        } catch (error) {
+            console.error("Callback error:", error);
+            res.redirect("http://localhost:3000/doctor/login?error=Authentication failed");
+        }
     }
 );
 //http://localhost:8000/api/v1/doctors/auth/google/callback

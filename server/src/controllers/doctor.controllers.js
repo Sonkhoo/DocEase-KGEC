@@ -268,9 +268,7 @@ const getVerifiedDoctorProfile = asyncHandler(async (req, res, next) => {
     if(!doctor){
         throw new apiError(400, "Doctor does not exist")
     }
-    if(!doctor.isVerified){
-        throw new apiError(400, "Doctor is not verified by the Admin")
-    }
+    console.log(doctor)
     return res.status(200)
     .json(
         new apiResponse(200, {

@@ -4,21 +4,24 @@ import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import axios from 'axios';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
 
-export interface Doctor {
+interface Doctor {
   _id: string;
   name: string;
-  speciality: string[];
-  contact_info: {
-    email?: string;
-    phone?: string;
+  specialty: string[];
+  experience: number;
+  hospital_affiliation: string;
+  consultation_fee: number;
+  profileImage: {
+    url: string;
   };
-  experience?: number;
-  hospital_affiliation?: string;
-  consultation_fee?: number;
-  registrationNumber?: string;
-  avatar?: string;
+  availability: {
+    day: string;
+    start_time: string;
+    end_time: string;
+    recurring: boolean;
+  }[];
 }
 
 export function DoctorsList() {
@@ -26,12 +29,12 @@ export function DoctorsList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter(); // Initialize the router
+  const router = useRouter();
 
   useEffect(() => {
     const fetchDoctors = async () => {
       if (!searchTerm.trim()) {
-        setDoctors([]); // Clear the list if the search term is empty
+        setDoctors([]);
         return;
       }
 
@@ -40,7 +43,7 @@ export function DoctorsList() {
         setError(null);
 
         const response = await axios.post(
-          'http://localhost:8001/api/v1/doctors/PostDoc',
+          'http://localhost:8000/api/v1/doctors/PostDoc',
           {
             name: searchTerm.trim(),
             specialization: searchTerm.trim()
@@ -71,10 +74,8 @@ export function DoctorsList() {
     return () => clearTimeout(debounceTimer);
   }, [searchTerm]);
 
-  // Handle routing to the doctor's booking page
   const handleBookAppointment = (doctorId: string) => {
-    console.log('Booking appointment with doctor:', doctorId); // Debugging
-    router.push(`/appointment/${doctorId}`); // Navigate to the doctor's booking page
+    router.push(`/appointments/${doctorId}`);
   };
 
   return (
@@ -100,7 +101,7 @@ export function DoctorsList() {
         <div key={doctor._id} className="flex items-center justify-between p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow duration-200">
           <div className="flex items-center space-x-4">
             <Avatar className="h-12 w-12">
-              <AvatarImage src={doctor.avatar || "/placeholder.svg"} alt={doctor.name} />
+              <AvatarImage src={doctor.profileImage?.url || "/placeholder.svg"} alt={doctor.name} />
               <AvatarFallback className="bg-green-100 text-green-700">
                 {doctor.name
                   .split(" ")
@@ -114,17 +115,14 @@ export function DoctorsList() {
                 <div className="flex items-center space-x-1">
                   <span className="text-sm font-medium text-green-600">Specializations:</span>
                   <div className="flex flex-wrap gap-1">
-                    {doctor.speciality?.map((spec, index) => {
-                      console.log('Doctor:', doctor.name, 'Specialization:', spec);
-                      return (
-                        <span 
-                          key={index}
-                          className="text-sm text-gray-600 bg-green-50 px-2 py-0.5 rounded-full"
-                        >
-                          {spec}
-                        </span>
-                      );
-                    })}
+                    {doctor.specialty?.map((spec, index) => (
+                      <span 
+                        key={index}
+                        className="text-sm text-gray-600 bg-green-50 px-2 py-0.5 rounded-full"
+                      >
+                        {spec}
+                      </span>
+                    ))}
                   </div>
                 </div>
                 {doctor.experience && (
@@ -144,7 +142,7 @@ export function DoctorsList() {
           <div className="flex flex-col items-end space-y-2">
             {doctor.consultation_fee && (
               <p className="text-sm font-medium text-green-600">
-                Consultation Fee: ₹{doctor.consultation_fee}
+                Consultation Fee: {doctor.consultation_fee} DocTokens
               </p>
             )}
             <Button
