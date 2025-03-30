@@ -131,15 +131,14 @@ export default function AppointmentPage({ params }: { params: Promise<{ id: stri
   
     try {
       // Request account access
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = await provider.getSigner();
       const userAddress = await signer.getAddress();
 
       // Connect to the token contract
       const tokenContract = new ethers.Contract(tokenAddress, tokenABI, signer);
 
-      // Define the payment amount in tokens (e.g., 100 tokens)
-      const amount = ethers.parseUnits("10", 18); // Adjust decimals if needed
+      const amount = ethers.utils.parseEther("10"); // Convert 10 to wei
 
       // Check user's token balance
       const balance = await tokenContract.balanceOf(userAddress);
