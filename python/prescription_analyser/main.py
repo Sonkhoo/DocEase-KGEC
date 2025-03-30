@@ -19,9 +19,9 @@ app.add_middleware(
 )
 
 # Include API router
-app.include_router(router)
+app.include_router(router, prefix="/api/v1")
 
 # Entry point
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=5000, log_level="info", reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=59978, log_level="info", reload=True)
