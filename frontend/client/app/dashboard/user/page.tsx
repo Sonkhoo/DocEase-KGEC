@@ -116,7 +116,7 @@ export default function UserHealthDashboard() {
       const formData = new FormData()
       formData.append("prescription", prescription)
   
-      const response = await fetch("http://127.0.0.1:5000/analyze-prescription/", {
+      const response = await fetch("http://127.0.0.1:59978/api/v1/analyze-prescription/", {
         method: "POST",
         headers: {
           "X-API-Key": "dev_key", // Include API key here
