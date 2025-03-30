@@ -10,6 +10,7 @@ interface DoctorAuthContextType {
   error: string | null;
   access_token: string | null;
   user_id: string | null;
+  isAuthenticated: boolean;
   registerDoctor: (doctorData: DoctorRegistrationData) => Promise<void>;
   loginDoctor: (loginData: DoctorLoginData) => Promise<void>;
   clearError: () => void;
@@ -18,8 +19,8 @@ interface DoctorAuthContextType {
 
 interface Doctor {
   experience: number;
-  specialty: never[];
-  qualifications: never[];
+  specialty: string[];
+  qualifications: string[];
   availability: never[];
   hospital_affiliation: string;
   consultation_fee: number;
@@ -31,6 +32,15 @@ interface Doctor {
     email?: string;
     phone?: string;
   };
+  bio?: string;
+  education?: {
+    degree: string;
+    institution: string;
+    year: string;
+  }[];
+  languages?: string[];
+  awards?: string[];
+  publications?: string[];
 }
 
 interface DoctorRegistrationData {
@@ -61,35 +71,116 @@ export function DoctorAuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  // Load access_token and user_id from cookies on initial load
-//   useEffect(() => {
-//     const accessToken = Cookies.get("accessToken");
-//     console.log(accessToken);
-//     const userId = Cookies.get("userId");
-//     console.log(userId);
-//     if (accessToken && userId) {
-//       setAccessToken(accessToken);
-//       setUserId(userId);
-//       fetchDoctorData(accessToken, userId);
-//     } else {
-//       setIsLoading(false); // No tokens found, stop loading
-//     }
-//   }, []);
+  // Compute isAuthenticated based on whether access_token and user_id exist
+  const isAuthenticated = !!access_token && !!user_id && !!doctor;
+
+  // Initialize from localStorage and cookies on mount
+  useEffect(() => {
+    const initAuth = () => {
+      try {
+        // First try localStorage
+        if (typeof window !== 'undefined') {
+          const storedDoctor = localStorage.getItem('doctor');
+          const storedToken = localStorage.getItem('doctorAccessToken');
+          const storedUserId = localStorage.getItem('doctorUserId');
+          
+          // Log what we found in localStorage
+          console.log("Auth data in localStorage:", {
+            doctor: !!storedDoctor,
+            token: !!storedToken,
+            userId: !!storedUserId
+          });
+          
+          if (storedDoctor && storedToken && storedUserId) {
+            try {
+              setDoctor(JSON.parse(storedDoctor));
+              setAccessToken(storedToken);
+              setUserId(storedUserId);
+              setIsLoading(false);
+              return; // Successfully loaded from localStorage
+            } catch (error) {
+              console.error('Error parsing stored doctor data:', error);
+              // Clear invalid localStorage data
+              localStorage.removeItem('doctor');
+              localStorage.removeItem('doctorAccessToken');
+              localStorage.removeItem('doctorUserId');
+            }
+          }
+        }
+        
+        // Fallback to cookies if localStorage fails
+        const cookieToken = Cookies.get("accessToken");
+        const cookieUserId = Cookies.get("userId");
+        
+        console.log("Auth data in cookies:", {
+          token: !!cookieToken,
+          userId: cookieUserId
+        });
+        
+        if (cookieToken && cookieUserId) {
+          setAccessToken(cookieToken);
+          setUserId(cookieUserId);
+          // Fetch doctor data
+          fetchDoctorData(cookieToken, cookieUserId);
+        } else {
+          setIsLoading(false); // No auth data found
+        }
+      } catch (error) {
+        console.error("Error initializing auth:", error);
+        setIsLoading(false);
+      }
+    };
+    
+    initAuth();
+  }, []);
 
   // Fetch doctor data if access_token and user_id are present
-//   const fetchDoctorData = async (token: string, userId: string) => {
-//     try {
-//       const response = await axios.get(`http://localhost:8000/api/v1/doctors/${userId}`, {
-//         headers: { Authorization: `Bearer ${token}` },
-//       });
-//       setDoctor(response.data.data);
-//     } catch (error) {
-//       console.error("Error fetching doctor data:", error);
-//       logoutDoctor(); // Clear invalid tokens
-//     } finally {
-//       setIsLoading(false);
-//     }
-//   };
+  const fetchDoctorData = async (token: string, userId: string) => {
+    try {
+      console.log("Fetching doctor data for userId:", userId);
+      
+      const response = await axios.get(`http://localhost:8000/api/v1/doctors/profile/${userId}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+      });
+      
+      console.log("Doctor data response status:", response.status);
+      
+      if (response.data && response.data.data && response.data.data.user) {
+        const doctorData = response.data.data.user;
+        
+        // Update state
+        setDoctor(doctorData);
+        
+        // Store in localStorage for persistence
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('doctor', JSON.stringify(doctorData));
+          localStorage.setItem('doctorAccessToken', token);
+          localStorage.setItem('doctorUserId', userId);
+        }
+        
+        console.log("Doctor data loaded and saved successfully");
+      } else {
+        console.warn("Doctor data structure unexpected:", response.data);
+        throw new Error("Invalid doctor data structure");
+      }
+    } catch (error) {
+      console.error("Error fetching doctor data:", error);
+      
+      // Check specific error conditions
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 401 || status === 403) {
+          console.log("Authentication failed, clearing session");
+          logoutDoctor();
+        }
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const clearError = () => setError(null);
 
@@ -105,14 +196,43 @@ export function DoctorAuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Please provide all required fields");
       }
 
+      console.log("Attempting doctor registration");
       const response = await axios.post("http://localhost:8000/api/v1/doctors/register", doctorData);
+      console.log("Registration response:", response.status);
 
       if (response.data.data) {
-        setDoctor(response.data.data);
+        const { user, accessToken } = response.data.data;
+        console.log("Doctor registration successful");
+        
+        // Update state
+        setDoctor(user);
+        setAccessToken(accessToken);
+        setUserId(user._id);
+        
+        // Store in localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('doctor', JSON.stringify(user));
+          localStorage.setItem('doctorAccessToken', accessToken);
+          localStorage.setItem('doctorUserId', user._id);
+        }
+        
+        // Also set cookies as backup
+        Cookies.set("accessToken", accessToken, { 
+          expires: 30,
+          path: '/',
+          sameSite: "lax"
+        });
+        Cookies.set("userId", user._id, { 
+          expires: 30,
+          path: '/',
+          sameSite: "lax"
+        });
+
         // Route to KYC page after registration
         router.push("/kyc/doctor");
       }
     } catch (err) {
+      console.error("Registration error:", err);
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.message || "Registration failed");
       } else if (err instanceof Error) {
@@ -131,32 +251,55 @@ export function DoctorAuthProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       const { contact_info, password } = loginData;
-      const { email } = contact_info;
+      const { email, phone } = contact_info;
 
-      if (!email || !password) {
-        throw new Error("Please provide all required fields");
+      if ((!email && !phone) || !password) {
+        throw new Error("Please provide email/phone and password");
       }
 
+      console.log("Attempting doctor login");
+      
       const response = await axios.post("http://localhost:8000/api/v1/doctors/login", loginData, {
         withCredentials: true,
       });
+
+      console.log("Login response status:", response.status);
 
       if (response.data.data.user) {
         const user = response.data.data.user;
         const token = response.data.data.accessToken;
 
+        console.log("Doctor login successful");
+        
+        // Update state
         setDoctor(user);
         setAccessToken(token);
         setUserId(user._id);
         
-        // Store in cookies for persistence
-        Cookies.set("accessToken", token, { expires: 7, secure: true, sameSite: "strict" });
-        Cookies.set("userId", user._id, { expires: 7, secure: true, sameSite: "strict" });
+        // Store in localStorage
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('doctor', JSON.stringify(user));
+          localStorage.setItem('doctorAccessToken', token);
+          localStorage.setItem('doctorUserId', user._id);
+        }
+        
+        // Also set cookies as backup
+        Cookies.set("accessToken", token, { 
+          expires: 30,
+          path: '/',
+          sameSite: "lax"
+        });
+        Cookies.set("userId", user._id, { 
+          expires: 30,
+          path: '/',
+          sameSite: "lax" 
+        });
 
         // Route to dashboard after login
         router.push("/dashboard/doctor");
       }
     } catch (err) {
+      console.error("Login error:", err);
       if (axios.isAxiosError(err)) {
         setError(err.response?.data?.message || "Login failed");
       } else if (err instanceof Error) {
@@ -170,14 +313,29 @@ export function DoctorAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logoutDoctor = () => {
+    console.log("Logging out doctor");
+    
+    // Clear React state
     setDoctor(null);
     setAccessToken(null);
     setUserId(null);
 
+    // Clear localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('doctor');
+      localStorage.removeItem('doctorAccessToken');
+      localStorage.removeItem('doctorUserId');
+    }
+
     // Clear cookies
     Cookies.remove("accessToken", { path: "/" });
     Cookies.remove("userId", { path: "/" });
+    
+    // Alternative cookie clearing approach
+    document.cookie = "accessToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 
+    // Navigate back to login
     router.push("/doctor/login");
   };
 
@@ -187,6 +345,7 @@ export function DoctorAuthProvider({ children }: { children: ReactNode }) {
     error,
     access_token,
     user_id,
+    isAuthenticated,
     registerDoctor,
     loginDoctor,
     clearError,

@@ -1,7 +1,6 @@
-// DoctorDashboard.tsx
 "use client"
 
-import { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -16,7 +15,8 @@ import {
   Heart, 
   Stethoscope,
   BadgeCheck,
-  X
+  X,
+  Loader2
 } from "lucide-react"
 import {
   Dialog,
@@ -32,107 +32,173 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { FloatingPaper } from "@/components/common/floating-paper"
-import Navbar from "@/components/common/navbar"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
+import { useUser } from "@/app/_context/UserContext"
+import axios from "axios"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { useDoctorAuth } from "@/app/_context/Doctorcontext"
+import { motion } from "framer-motion"
+import { cn } from "@/lib/utils"
+import { FloatingPaper } from "@/components/common/floating-paper"
 
 interface Appointment {
-  name: string;
-  time: string;
+  _id: string;
+  patientId: {
+    _id: string;
+    name: string;
+    contact_info: {
+      email: string;
+      phone: string;
+    };
+  };
   date: string;
+  time: string;
   type: string;
   location: string;
-  phone: string;
   status: string;
   notes: string;
-  lastVisit: string;
-
+  lastVisit?: string;
 }
 
-export default function DoctorDashboard() {
+interface DashboardStats {
+  totalAppointments: number;
+  pendingAppointments: number;
+  completedAppointments: number;
+  totalPatients: number;
+}
+
+interface RecentActivity {
+  _id: string;
+  type: string;
+  description: string;
+  timestamp: string;
+}
+
+const API_URL = 'http://localhost:8000/api/v1/doctors';
+
+const fadeIn = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6 } }
+};
+
+const staggerContainer = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1
+    }
+  }
+};
+
+const DoctorDashboard = () => {
+  const { user } = useUser();
+  const { doctor, access_token, user_id } = useDoctorAuth();
   const [selectedTimeRange, setSelectedTimeRange] = useState("This Week")
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
-  
-  const appointments: Appointment[] = [
-    {
-      name: "Sankhadeep Chowdhury",
-      time: "09:00 AM",
-      date: "Feb 9, 2025",
-      type: "Check-up",
-      location: "Room 101",
-      phone: "4567",
-      status: "Confirmed",
-      notes: "Regular annual check-up, patient has history of hypertension",
-      lastVisit: "Jan 9, 2025",
-     
-    },
-    {
-      name: "rajarshi",
-      time: "11:30 PM",
-      date: "Feb 24, 2025",
-      type: "Consultation",
-      location: "Room 105",
-      phone: "7980564387",
-      status: "Confirmed",
-      notes: "Initial consultation for knee pain",
-      lastVisit: "N/A",
-    },
-    {
-      name: "Alice Brown",
-      time: "03:30 PM",
-      date: "Feb 9, 2025",
-      type: "Review",
-      location: "Room 102",
-      phone: "+1 (555) 456-7890",
-      status: "Confirmed",
-      notes: "Monthly review of chronic condition",
-      lastVisit: "Jan 15, 2025",
-     
-    }
-  ]
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalAppointments: 0,
+    pendingAppointments: 0,
+    completedAppointments: 0,
+    totalPatients: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const recentActivity = [
-    { icon: Users, text: "New patient registered", time: "2 mins ago", color: "bg-blue-100" },
-    { icon: Calendar, text: "Appointment rescheduled", time: "1 hour ago", color: "bg-emerald-100" },
-    { icon: Heart, text: "Updated patient records", time: "3 hours ago", color: "bg-red-100" },
-    { icon: DollarSign, text: "Payment received", time: "5 hours ago", color: "bg-yellow-100" },
-  ]
+  const recentActivityIcons = {
+    'appointment': Calendar,
+    'patient': Users,
+    'payment': DollarSign, 
+    'medical': Heart,
+    'default': Activity
+  };
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!access_token || !user_id) return;
+
+      try {
+        setLoading(true);
+        const [appointmentsRes, statsRes, activityRes] = await Promise.all([
+          axios.get(`${API_URL}/${user_id}/appointments`, { headers: { Authorization: `Bearer ${access_token}` } }),
+          axios.get(`${API_URL}/${user_id}/stats`, { headers: { Authorization: `Bearer ${access_token}` } }),
+          axios.get(`${API_URL}/${user_id}/activity`, { headers: { Authorization: `Bearer ${access_token}` } })
+        ]);
+
+        setAppointments(appointmentsRes.data.data.appointments);
+        setStats(statsRes.data.data.stats);
+        setRecentActivity(activityRes.data.data.activity);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        toast.error("Failed to fetch dashboard data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [access_token, user_id]);
+
+  const handleAppointmentAction = async (appointmentId: string, action: 'accept' | 'reject' | 'delay') => {
+    try {
+      await axios.patch(
+        `${API_URL}/appointments/${appointmentId}/${action}`,
+        {},
+        { headers: { Authorization: `Bearer ${access_token}` } }
+      );
+      
+      const actionMessages = {
+        accept: {
+          title: 'Appointment Confirmed',
+          description: `Appointment has been confirmed`,
+          type: toast.success
+        },
+        reject: {
+          title: 'Appointment Rejected',
+          description: `Appointment has been rejected`,
+          type: toast.error
+        },
+        delay: {
+          title: 'Appointment Delayed',
+          description: 'Please select a new time slot',
+          type: toast.warning
+        }
+      };
+
+      const message = actionMessages[action];
+      message.type(message.title, {
+        description: message.description
+      });
+
+      // Refresh appointments after action
+      const response = await axios.get(`${API_URL}/${user_id}/appointments`, {
+        headers: { Authorization: `Bearer ${access_token}` },
+      });
+      setAppointments(response.data.data.appointments);
+      
+      setSelectedAppointment(null);
+    } catch (error) {
+      console.error(`Error ${action}ing appointment:`, error);
+      toast.error(`Failed to ${action} appointment`);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-green-600 rounded-full border-t-transparent"></div>
+      </div>
+    );
+  }
 
   const quickStats = [
-    { label: "Completion Rate", value: "98%", color: "bg-green-100" },
+    { label: "Completion Rate", value: `${stats.completedAppointments}%`, color: "bg-green-100" },
     { label: "Patient Satisfaction", value: "4.8/5", color: "bg-blue-100" },
     { label: "Average Wait Time", value: "12 mins", color: "bg-purple-100" }
-  ]
-
-  const handleAppointmentAction = (action: 'accept' | 'reject' | 'delay') => {
-    if (!selectedAppointment) return;
-    
-    const actionMessages = {
-      accept: {
-        title: 'Appointment Confirmed',
-        description: `Appointment with ${selectedAppointment.name} has been confirmed for ${selectedAppointment.date} at ${selectedAppointment.time}`,
-        type: toast.success
-      },
-      reject: {
-        title: 'Appointment Rejected',
-        description: `Appointment with ${selectedAppointment.name} has been rejected`,
-        type: toast.error
-      },
-      delay: {
-        title: 'Appointment Delayed',
-        description: 'Please select a new time slot',
-        type: toast.warning
-      }
-    }
-
-    const message = actionMessages[action]
-    message.type(message.title, {
-      description: message.description
-    })
-    
-    setSelectedAppointment(null)
-  }
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50">
@@ -140,7 +206,6 @@ export default function DoctorDashboard() {
       <div className="absolute inset-0 overflow-hidden">
         <FloatingPaper count={8} />
       </div>
-     
       
       <div className="relative backdrop-blur-sm bg-white/20">
         {/* Header Section */}
@@ -170,13 +235,73 @@ export default function DoctorDashboard() {
         {/* Main Content */}
         <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-6">
+            {/* Doctor Profile Card */}
+            <Card className="col-span-full md:col-span-4 lg:col-span-6 backdrop-blur-md bg-white/40 border-white/20 shadow-xl">
+              <CardHeader>
+                <CardTitle className="text-2xl text-emerald-900 flex items-center gap-2">
+                  <Stethoscope className="h-6 w-6" /> Doctor Profile
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="flex flex-col md:flex-row md:items-center gap-6">
+                  <div className="flex items-center gap-5">
+                    <div className="relative">
+                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center">
+                        <span className="text-3xl font-bold text-emerald-800">
+                          {doctor?.name?.charAt(0) || "D"}
+                        </span>
+                      </div>
+                      <div className="absolute bottom-0 right-0 w-5 h-5 bg-emerald-400 rounded-full border-2 border-white"></div>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-emerald-900">Dr. {doctor?.name}</h3>
+                      <p className="text-lg text-emerald-700 mt-1">{doctor?.specialty?.join(", ")}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mt-4 md:mt-0">
+                    {doctor?.hospital_affiliation && (
+                      <div className="flex items-center gap-3">
+                        <MapPin className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                        <span className="text-base text-emerald-800">{doctor?.hospital_affiliation}</span>
+                      </div>
+                    )}
+                    {doctor?.consultation_fee && (
+                      <div className="flex items-center gap-3">
+                        <DollarSign className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                        <span className="text-base text-emerald-800">₹{doctor?.consultation_fee} consultation fee</span>
+                      </div>
+                    )}
+                    {doctor?.experience && (
+                      <div className="flex items-center gap-3">
+                        <Clock className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                        <span className="text-base text-emerald-800">{doctor?.experience} years experience</span>
+                      </div>
+                    )}
+                    {doctor?.contact_info?.phone && (
+                      <div className="flex items-center gap-3">
+                        <Phone className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                        <span className="text-base text-emerald-800">{doctor?.contact_info?.phone}</span>
+                      </div>
+                    )}
+                    {doctor?.contact_info?.email && (
+                      <div className="flex items-center gap-3">
+                        <Heart className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                        <span className="text-base text-emerald-800">{doctor?.contact_info?.email}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Stats Cards */}
             <div className="col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { title: "Total Patients", value: "1,234", change: "+10% from last month", icon: Users, color: "from-blue-500/20 to-blue-600/20" },
-                { title: "Appointments", value: "42", change: "This week", icon: Calendar, color: "from-emerald-500/20 to-emerald-600/20" },
-                { title: "Total Hours", value: "38.5", change: "This week", icon: Clock, color: "from-purple-500/20 to-purple-600/20" },
-                { title: "Revenue", value: "$4,320", change: "This month", icon: DollarSign, color: "from-amber-500/20 to-amber-600/20" }
+                { title: "Total Patients", value: stats.totalPatients.toString(), change: "+10% from last month", icon: Users, color: "from-blue-500/20 to-blue-600/20" },
+                { title: "Appointments", value: stats.totalAppointments.toString(), change: "This week", icon: Calendar, color: "from-emerald-500/20 to-emerald-600/20" },
+                { title: "Total Hours", value: stats.completedAppointments.toString(), change: "This week", icon: Clock, color: "from-purple-500/20 to-purple-600/20" },
+                { title: "Revenue", value: `$${stats.totalPatients * 50}`, change: "This month", icon: DollarSign, color: "from-amber-500/20 to-amber-600/20" }
               ].map((stat, index) => (
                 <Card key={index} className="backdrop-blur-md bg-gradient-to-br border-white/20 shadow-xl hover:shadow-2xl transition-all duration-300">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -202,17 +327,23 @@ export default function DoctorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentActivity.map((item, index) => (
-                    <div key={index} className="flex items-center p-3 rounded-lg hover:bg-white/30 transition-colors">
-                      <div className={`p-2 rounded-lg ${item.color} mr-3`}>
-                        <item.icon className="h-5 w-5 text-emerald-600" />
+                  {recentActivity.map((item, index) => {
+                    const IconComponent = recentActivityIcons[item.type as keyof typeof recentActivityIcons] || recentActivityIcons.default;
+                    const colors = ["bg-blue-100", "bg-emerald-100", "bg-red-100", "bg-yellow-100"];
+                    const color = colors[index % colors.length];
+                    
+                    return (
+                      <div key={index} className="flex items-center p-3 rounded-lg hover:bg-white/30 transition-colors">
+                        <div className={`p-2 rounded-lg ${color} mr-3`}>
+                          <IconComponent className="h-5 w-5 text-emerald-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-base text-emerald-900">{item.description}</p>
+                          <p className="text-sm text-emerald-600">{new Date(item.timestamp).toLocaleTimeString()}</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-base text-emerald-900">{item.text}</p>
-                        <p className="text-sm text-emerald-600">{item.time}</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -250,9 +381,9 @@ export default function DoctorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {appointments.map((appointment, index) => (
+                  {appointments.map((appointment) => (
                     <Card 
-                      key={index} 
+                      key={appointment._id} 
                       className="backdrop-blur-sm bg-white/60 border-white/20 hover:shadow-xl transition-all duration-300 cursor-pointer"
                       onClick={() => setSelectedAppointment(appointment)}
                     >
@@ -262,7 +393,7 @@ export default function DoctorDashboard() {
                             <Users className="h-6 w-6 text-emerald-600" />
                           </div>
                           <div>
-                            <h3 className="text-lg font-semibold text-emerald-900">{appointment.name}</h3>
+                            <h3 className="text-lg font-semibold text-emerald-900">{appointment.patientId.name}</h3>
                             <p className="text-sm text-emerald-600">{appointment.type}</p>
                           </div>
                         </div>
@@ -277,11 +408,11 @@ export default function DoctorDashboard() {
                           </div>
                           <div className="mt-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              appointment.status === "Confirmed" 
+                              appointment.status === "confirmed" || appointment.status === "Confirmed" 
                                 ? "bg-green-100 text-green-800" 
                                 : "bg-yellow-100 text-yellow-800"
                             }`}>
-                              {appointment.status}
+                              {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
                             </span>
                           </div>
                         </div>
@@ -310,16 +441,16 @@ export default function DoctorDashboard() {
                     <Users className="h-8 w-8 text-emerald-600" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-semibold text-emerald-900">{selectedAppointment.name}</h3>
+                    <h3 className="text-xl font-semibold text-emerald-900">{selectedAppointment.patientId.name}</h3>
                     <p className="text-emerald-600">{selectedAppointment.type}</p>
                   </div>
                   <div className="ml-auto">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      selectedAppointment.status === "Confirmed" 
+                      selectedAppointment.status === "confirmed" || selectedAppointment.status === "Confirmed" 
                         ? "bg-green-100 text-green-800" 
                         : "bg-yellow-100 text-yellow-800"
                     }`}>
-                      {selectedAppointment.status}
+                      {selectedAppointment.status.charAt(0).toUpperCase() + selectedAppointment.status.slice(1)}
                     </span>
                   </div>
                 </div>
@@ -332,7 +463,7 @@ export default function DoctorDashboard() {
                       <h4 className="text-sm font-medium text-emerald-900 mb-2">Schedule</h4>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm text-emerald-800">{selectedAppointment.date} at {selectedAppointment.time}</p>
+                        <p className="text-sm text-emerald-800">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</p>
                       </div>
                     </div>
 
@@ -340,7 +471,7 @@ export default function DoctorDashboard() {
                       <h4 className="text-sm font-medium text-emerald-900 mb-2">Contact</h4>
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-emerald-600" />
-                        <p className="text-sm text-emerald-800">{selectedAppointment.phone}</p>
+                        <p className="text-sm text-emerald-800">{selectedAppointment.patientId.contact_info.phone}</p>
                       </div>
                     </div>
 
@@ -356,15 +487,8 @@ export default function DoctorDashboard() {
                   {/* Right Column */}
                   <div className="space-y-4">
                     <div className="bg-white/50 p-4 rounded-lg">
-                      <h4 className="text-sm font-medium text-emerald-900 mb-2">Insurance</h4>
-                      <div className="space-y-2">
-                       
-                      </div>
-                    </div>
-
-                    <div className="bg-white/50 p-4 rounded-lg">
                       <h4 className="text-sm font-medium text-emerald-900 mb-2">Last Visit</h4>
-                      <p className="text-sm text-emerald-800">{selectedAppointment.lastVisit}</p>
+                      <p className="text-sm text-emerald-800">{selectedAppointment.lastVisit || 'N/A'}</p>
                     </div>
 
                     <div className="bg-white/50 p-4 rounded-lg">
@@ -377,21 +501,21 @@ export default function DoctorDashboard() {
                 {/* Action Buttons */}
                 <div className="grid grid-cols-3 gap-4 pt-6">
                   <Button 
-                    onClick={() => handleAppointmentAction('accept')}
+                    onClick={() => handleAppointmentAction(selectedAppointment._id, 'accept')}
                     className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2"
                   >
                     <BadgeCheck className="h-4 w-4" />
                     Accept
                   </Button>
                   <Button 
-                    onClick={() => handleAppointmentAction('reject')}
+                    onClick={() => handleAppointmentAction(selectedAppointment._id, 'reject')}
                     className="bg-red-600 hover:bg-red-700 text-white flex items-center justify-center gap-2"
                   >
                     <X className="h-4 w-4" />
                     Reject
                   </Button>
                   <Button 
-                    onClick={() => handleAppointmentAction('delay')}
+                    onClick={() => handleAppointmentAction(selectedAppointment._id, 'delay')}
                     className="bg-yellow-600 hover:bg-yellow-700 text-white flex items-center justify-center gap-2"
                   >
                     <Clock className="h-4 w-4" />
@@ -414,3 +538,5 @@ export default function DoctorDashboard() {
     </div>
   )
 }
+
+export default DoctorDashboard

@@ -9,6 +9,8 @@ import { CopilotPopup } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css"; 
 import FloatingChatButton from "@/components/FloatingChatButton";
 import { UserProvider } from "./_context/UserContext"
+import Navbar from "@/components/common/navbar";
+import LoadingWrapper from "@/components/common/Loader";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,11 +37,13 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <LoadingWrapper>
         <UserProvider>
-          <Providers><DoctorAuthProvider><AuthProvider>{children}
+          <Providers><DoctorAuthProvider><AuthProvider> <Navbar/>{children}
             <FloatingChatButton/>
           </AuthProvider></DoctorAuthProvider></Providers>
         </UserProvider>
+        </LoadingWrapper>
       </body>
     </html>
   );

@@ -8,7 +8,7 @@ from config import settings, logger
 from models.schemas import PrescriptionResponse, JobStatus, PrescriptionData
 from services.image_processor import validate_image
 from services.ocr_service import extract_text_from_image
-from services.text_processor import correct_text_with_groq
+from services.text_processor import correct_text_with_groq, extract_structured_medications
 from services.prescription_parser import parse_prescription_text
 from utils.job_store import JOB_STORE
 
@@ -39,8 +39,14 @@ def process_prescription_image(job_id: str, image_bytes: BytesIO):
         # AI-Powered Correction
         corrected_text = correct_text_with_groq(extracted_text) if settings.enable_ai_correction else extracted_text
         
+        # Extract structured medication data
+        medications = extract_structured_medications(corrected_text)
+        
         # Parse structured data
         prescription_details = parse_prescription_text(corrected_text)
+        
+        # Add medications to the response
+        prescription_details.medications = medications
         
         processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
         
@@ -52,6 +58,7 @@ def process_prescription_image(job_id: str, image_bytes: BytesIO):
                 raw_text=extracted_text,
                 corrected_text=corrected_text,
                 parsed_data=prescription_details,
+                medications=medications,
                 processing_time_ms=processing_time
             )
         }
@@ -95,8 +102,14 @@ async def analyze_prescription(
         # AI-Powered Correction
         corrected_text = correct_text_with_groq(extracted_text) if settings.enable_ai_correction else extracted_text
         
+        # Extract structured medication data
+        medications = extract_structured_medications(corrected_text)
+        
         # Parse structured data
         prescription_details = parse_prescription_text(corrected_text)
+        
+        # Add medications to the response
+        prescription_details.medications = medications
         
         processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
         logger.info(f"Processed prescription in {processing_time:.2f}ms")
@@ -106,6 +119,7 @@ async def analyze_prescription(
             raw_text=extracted_text,
             corrected_text=corrected_text,
             parsed_data=prescription_details,
+            medications=medications,
             processing_time_ms=processing_time
         )
         
@@ -173,7 +187,7 @@ async def test_prescription(api_key: str = Depends(verify_api_key)):
     Patient: John Doe
     
     Rx:
-    1. Parecetamol 500 mg tablet
+    1. Paracetamol 500 mg tablet
        Take 1 tablet every 8 hours for 5 days
     2. Amoxicillin 250 mg capsule
        Take 1 capsule three times daily after meals
@@ -184,14 +198,21 @@ async def test_prescription(api_key: str = Depends(verify_api_key)):
     # AI Correction (disabled for test endpoint)
     corrected_text = sample_text
     
+    # Extract structured medication data
+    medications = extract_structured_medications(corrected_text)
+    
     # Parse data
     parsed_data = parse_prescription_text(corrected_text)
+    
+    # Add medications to the response
+    parsed_data.medications = medications
     
     return PrescriptionResponse(
         success=True,
         raw_text=sample_text,
         corrected_text=corrected_text,
-        parsed_data=parsed_data
+        parsed_data=parsed_data,
+        medications=medications
     )
 
 @router.get("/health", tags=["Info"])

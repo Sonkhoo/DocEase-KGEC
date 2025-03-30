@@ -3,6 +3,8 @@ import apiError from "../utils/apiError.js";
 import apiResponse from "../utils/apiResponse.js";
 import Doctor from "../models/doctors.models.js";
 import fs from "fs"
+import Appointment from "../models/appointment.models.js";
+import User from "../models/users.models.js";
 
 const generateAccessandRefreshToken = async(userId)=>{
     try {
@@ -32,55 +34,65 @@ const registerDoctor = asyncHandler(async (req, res, next) => {
 
       const {phone, email} = contact_info
 
-      if (!name || !email && !phone || !password) {
+      if (!name || (!email && !phone) || !password) {
         throw new apiError("Please provide all required fields", 400);
       }
-      console.log("doctor controller check", phone, email);
-        // Check if the doctor already exists
-        const existingDoctor = await Doctor.findOne({ $or:[{ "contact_info.email": email},{"contact_info.phone": phone}]});
-        if (existingDoctor) {
-            throw new apiError("Doctor already exists", 400);
-        }
-        console.log(existingDoctor);
-        // Create a new doctor instance
-        const newDoctor = await Doctor.create({
-            name,
-            contact_info:{
-                email,
-                phone: phone || 0
-            },
-            password,
-        }); 
 
-        console.log(newDoctor);
+      // Check if the doctor already exists
+      const existingDoctor = await Doctor.findOne({ 
+        $or: [
+          { "contact_info.email": email }, 
+          { "contact_info.phone": phone }
+        ]
+      });
 
-        const createdDoctor= await Doctor.findById(newDoctor._id).select(
-            "-password -refreshToken"
-        )
+      if (existingDoctor) {
+        throw new apiError("Doctor already exists", 400);
+      }
 
-        if(!createdDoctor){
-            throw new apiError(500,"Registering User failed")
-        }
-        
-        res.status(201)
-        .cookie("accessToken", createdDoctor.accessToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none"
+      // Create a new doctor instance
+      const newDoctor = await Doctor.create({
+        name,
+        contact_info: {
+          email: email || undefined,
+          phone: phone || undefined
+        },
+        password,
+      }); 
+
+      const createdDoctor = await Doctor.findById(newDoctor._id).select(
+        "-password -refreshToken"
+      );
+
+      if(!createdDoctor){
+        throw new apiError(500, "Registering User failed");
+      }
+      
+      const {accessToken, refreshToken} = await generateAccessandRefreshToken(createdDoctor._id);
+
+      res.status(201)
+        .cookie("accessToken", accessToken, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none"
         })
-        .cookie("refreshToken", createdDoctor.refreshToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none"
+        .cookie("refreshToken", refreshToken, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none"
         })
         .cookie("userId", createdDoctor._id, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none"
+          httpOnly: true,
+          secure: true,
+          sameSite: "none"
         })
         .json(
-            new apiResponse(200, createdDoctor, "User registered")
-        )
+          new apiResponse(200, {
+            user: createdDoctor,
+            accessToken,
+            refreshToken
+          }, "User registered successfully")
+        );
 });
 
 // need to add multer,cloudinary, otp/email validation for password storage(microservices?/message queue?)
@@ -164,42 +176,101 @@ const updateDoctorPassword = asyncHandler(async (req, res, next) => {
   });
   
 const updateDoctorAvailability = asyncHandler(async (req, res, next) => {
-    // Assuming the authenticated doctor's ID is available in req.user.id.
-    const doctorId = req.user.id;
+    // Use the ID from the route parameters instead of req.user.id
+    const doctorId = req.params.id;
     const { availability } = req.body;
 
-    console.log("availability",availability);
-    console.log("doctorId",doctorId);
+    console.log("Received availability data:", JSON.stringify(availability, null, 2));
+    console.log("doctorId", doctorId);
   
     if (!availability || !Array.isArray(availability)) {
       return next(new apiError("Availability must be an array of availability objects.", 400));
     }
   
-    // Validate each availability object.
-    const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-    for (const slot of availability) {
-      if (!slot.start_time || !slot.end_time) {
-        return next(new apiError("Each availability slot must include start_time and end_time.", 400));
+    // Validate and process availability data
+    try {
+      // Validate each availability object
+      const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      
+      // Process and clean the availability data
+      const processedAvailability = availability.map(slot => {
+        // Validate basic slot fields
+        if (!slot.start_time || !slot.end_time) {
+          throw new apiError("Each availability slot must include start_time and end_time", 400);
+        }
+        
+        // Create a clean version of the slot
+        const cleanSlot = {
+          start_time: slot.start_time,
+          end_time: slot.end_time,
+          recurring: typeof slot.recurring === 'boolean' ? slot.recurring : true
+        };
+        
+        // Handle recurring and one-time slots differently
+        if (cleanSlot.recurring) {
+          // For recurring slots, validate and include day
+          if (!slot.day || !validDays.includes(slot.day)) {
+            throw new apiError(`Invalid or missing day for recurring slot: ${slot.day}`, 400);
+          }
+          cleanSlot.day = slot.day;
+          cleanSlot.date = null; // Clear date for recurring slots
+        } else {
+          // For one-time slots, validate and include date
+          if (!slot.date) {
+            throw new apiError("Date is required for one-time availability slots", 400);
+          }
+          
+          // Handle date (frontend sends as ISO string, convert to Date object)
+          try {
+            // Ensure we have a valid date string or Date object
+            const dateValue = slot.date instanceof Date ? slot.date : new Date(slot.date);
+            
+            // Check if date is valid
+            if (isNaN(dateValue.getTime())) {
+              console.error("Invalid date:", slot.date);
+              throw new apiError("Invalid date format for one-time slot", 400);
+            }
+            
+            cleanSlot.date = dateValue;
+            cleanSlot.day = ""; // Clear day for one-time slots
+          } catch (error) {
+            console.error("Date conversion error:", error);
+            throw new apiError(`Error processing date: ${error.message}`, 400);
+          }
+        }
+        
+        return cleanSlot;
+      });
+
+      // Update the doctor's availability field 
+      const updatedDoctor = await Doctor.findByIdAndUpdate(
+        doctorId,
+        { availability: processedAvailability },
+        { new: true, runValidators: true }
+      );
+    
+      if (!updatedDoctor) {
+        return next(new apiError("Doctor not found or failed to update availability", 404));
       }
-      // If day is provided, validate it.
-      if (slot.day && !validDays.includes(slot.day)) {
-        return next(new apiError("Invalid day provided in availability.", 400));
+    
+      console.log("Updated doctor availability successfully");
+      res.status(200).json(new apiResponse(200, updatedDoctor, "Availability updated successfully"));
+    } catch (error) {
+      console.error("Error updating availability:", error);
+      
+      // Handle Mongoose validation errors
+      if (error.name === 'ValidationError') {
+        return next(new apiError(`Validation error: ${error.message}`, 400));
       }
-      // Optionally, add more validations here (e.g. time format, logical start/end order)
+      
+      // If error is already an apiError, pass it through
+      if (error instanceof apiError) {
+        return next(error);
+      }
+      
+      // Otherwise, wrap in a generic error
+      return next(new apiError(`Error updating availability: ${error.message}`, 500));
     }
-  
-    // Update the doctor's availability field using a partial update.
-    const updatedDoctor = await Doctor.findByIdAndUpdate(
-      doctorId,
-      { $set: { availability } },
-      { new: true, runValidators: true }
-    );
-  
-    if (!updatedDoctor) {
-      return next(new apiError("Failed to update availability", 500));
-    }
-  
-    res.status(200).json(new apiResponse(200, updatedDoctor, "Availability updated successfully"));
   });
 
 const deleteDoctor = asyncHandler(async (req, res, next) => {
@@ -355,7 +426,49 @@ const PostAllDoctors = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: doctors });
 });
 
+const getDoctorPatients = asyncHandler(async (req, res, next) => {
+    const doctorId = req.params.doctorId;
+    
+    // Get all appointments for this doctor
+    const appointments = await Appointment.find({ doctorId })
+        .populate('patientId', 'name contact_info.email profileImage')
+        .sort({ createdAt: -1 });
 
+    // Transform appointments into patient list with last message
+    const patients = appointments.map(appointment => ({
+        _id: appointment.patientId._id,
+        name: appointment.patientId.name,
+        email: appointment.patientId.contact_info.email,
+        profileImage: appointment.patientId.profileImage,
+        lastMessage: {
+            text: "Start a conversation",
+            timestamp: new Date()
+        }
+    }));
 
+    // Remove duplicates based on patient ID
+    const uniquePatients = Array.from(
+        new Map(patients.map(item => [item._id, item])).values()
+    );
 
-export { registerDoctor, updateDoctor, deleteDoctor, loginDoctor, logoutDoctor, getVerifiedDoctorProfile, getAllApprovedDoctors, getDoctorsBySpecialty, getDoctorReviews, getDoctorAppointments, getDoctorAvailability, updateDoctorAvailability, updateDoctorPassword, PostAllDoctors };
+    res.status(200).json(
+        new apiResponse(200, { patients: uniquePatients }, "Patients fetched successfully")
+    );
+});
+
+const getPatientProfile = asyncHandler(async (req, res, next) => {
+    const patientId = req.params.patientId;
+    
+    const patient = await Patient.findById(patientId)
+        .select('name contact_info.email profileImage');
+
+    if (!patient) {
+        throw new apiError(404, "Patient not found");
+    }
+
+    res.status(200).json(
+        new apiResponse(200, { user: patient }, "Patient profile fetched successfully")
+    );
+});
+
+export { registerDoctor, updateDoctor, deleteDoctor, loginDoctor, logoutDoctor, getVerifiedDoctorProfile, getAllApprovedDoctors, getDoctorsBySpecialty, getDoctorReviews, getDoctorAppointments, getDoctorAvailability, updateDoctorAvailability, updateDoctorPassword, PostAllDoctors, getDoctorPatients, getPatientProfile };

@@ -7,7 +7,15 @@ import bcrypt from "bcrypt";
 const availabilitySchema = new Schema({
     day: {
       type: String,
-      enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", ""],
+      validate: {
+        validator: function(v) {
+          // Day is required and must be a valid day name when recurring is true
+          // When recurring is false, day can be empty
+          return (!this.recurring && v === "") || (this.recurring && ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].includes(v));
+        },
+        message: props => 'Day is required for recurring availability slots and must be a valid day name'
+      }
     },
     start_time: {
       type: String,
@@ -23,7 +31,14 @@ const availabilitySchema = new Schema({
     },
     date: {
       type: Date,
-      default: null,
+      validate: {
+        validator: function(v) {
+          // Date is required when recurring is false
+          // When recurring is true, date should be null
+          return (this.recurring && v === null) || (!this.recurring && v instanceof Date && !isNaN(v.getTime()));
+        },
+        message: props => 'Valid date is required for one-time availability slots'
+      }
     },
   });
   
@@ -56,24 +71,13 @@ const availabilitySchema = new Schema({
     contact_info: {
       email: {
         type: String,
-        validate: {
-          validator: function() {
-            return this.contact_info.email || this.contact_info.phone;
-          },
-          message: 'At least one of email or phone is required.'
-        },
-        unique: true,
         trim: true,
         lowercase: true,
+        sparse: true,
       },
       phone: {
-        type: Number,
-        validate: {
-          validator: function() {
-            return this.contact_info.email || this.contact_info.phone;
-          },
-          message: 'At least one of email or phone is required.'
-        },
+        type: String,
+        sparse: true,
       },
     },
     hospital_affiliation: {
@@ -90,12 +94,10 @@ const availabilitySchema = new Schema({
     },
     password: {
        type: String,
-      // required: () =>{
-      //   return this.googleId ? false : true}
     },
     refreshToken: {
       type: String
-  },
+    },
     registrationNumber: {
       type: String,
     },
@@ -124,6 +126,14 @@ const availabilitySchema = new Schema({
     }
   );
 
+  // Add pre-save middleware to validate contact info
+  doctorSchema.pre('save', async function(next) {
+    if (!this.contact_info.email && !this.contact_info.phone) {
+      next(new Error('At least one contact method (email or phone) is required'));
+    } else {
+      next();
+    }
+  });
 
   doctorSchema.pre("save", async function(next){ //pre is a hook just like post etc and save is a method
     if(!this.isModified("password")) return next()

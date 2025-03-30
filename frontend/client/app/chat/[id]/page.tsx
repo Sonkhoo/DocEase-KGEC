@@ -11,6 +11,10 @@ import { PrescriptionCard } from "@/components/PrescriptionCard"
 import MyPrescriptions from "@/components/PrescriptionViewerMine"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
+import { use } from "react"
+import { useUser } from "@/app/_context/UserContext"
+import axios from "axios"
+import { toast } from "sonner"
 
 // Socket.io server URL
 const SOCKET_URL = 'http://localhost:8000'
@@ -23,10 +27,25 @@ interface Message {
   timestamp: Date
 }
 
-export default function DoctorChatInterface() {
-  // User and doctor IDs (these would typically come from authentication)
-  const userId = "user123"
-  const doctorId = "doctor456"
+interface Doctor {
+  _id: string;
+  name: string;
+  specialty: string[];
+  experience: number;
+  hospital_affiliation: string;
+  profileImage: {
+    url: string;
+  };
+}
+
+export default function DoctorChatInterface({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const { user } = useUser();
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  
+  // User and doctor IDs from context and params
+  const userId = user?._id;
+  const doctorId = resolvedParams.id;
   
   const [message, setMessage] = useState("")
   const [messages, setMessages] = useState<Message[]>([])
@@ -37,10 +56,30 @@ export default function DoctorChatInterface() {
   const socketRef = useRef<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Fetch doctor data
+  useEffect(() => {
+    const fetchDoctorData = async () => {
+      try {
+        const response = await axios.get(`http://localhost:8000/api/v1/doctors/profile/${doctorId}`);
+        console.log('Doctor data received:', response.data.data.user);
+        setDoctor(response.data.data.user);
+      } catch (error) {
+        console.error('Error fetching doctor data:', error);
+        toast.error('Failed to load doctor information');
+      }
+    };
+
+    if (doctorId) {
+      fetchDoctorData();
+    }
+  }, [doctorId]);
+
   // Initialize socket connection
   useEffect(() => {
+    if (!userId || !doctorId) return;
+
     socketRef.current = io(SOCKET_URL, {
-      query: { userId }
+      query: { userId, doctorId }
     })
 
     socketRef.current.on('connect', () => {
@@ -58,7 +97,7 @@ export default function DoctorChatInterface() {
         socketRef.current.disconnect()
       }
     }
-  }, [userId])
+  }, [userId, doctorId])
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -72,7 +111,7 @@ export default function DoctorChatInterface() {
       const newMessage: Message = {
         id: Math.random().toString(36).substr(2, 9),
         text: message,
-        senderId: userId,
+        senderId: userId!, // Add non-null assertion since we check userId exists above
         timestamp: new Date()
       }
 
@@ -134,14 +173,21 @@ export default function DoctorChatInterface() {
           <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-t-lg">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-xl md:text-2xl">Chat with Dr. Richard James</CardTitle>
+                <CardTitle className="text-xl md:text-2xl">
+                  Chat with {doctor ? `Dr. ${doctor.name}` : 'Loading...'}
+                </CardTitle>
                 <CardDescription className="text-green-50">
-                  General Physician • {isConnected ? "Online" : "Offline"}
+                  {doctor?.specialty?.join(', ')} • {isConnected ? "Online" : "Offline"}
                 </CardDescription>
               </div>
               <Avatar className="h-12 w-12 border-2 border-white">
-                <AvatarImage src="/placeholder.svg?height=100&width=100" alt="Dr. Richard James" />
-                <AvatarFallback className="bg-emerald-700 text-white">RJ</AvatarFallback>
+                <AvatarImage 
+                  src={doctor?.profileImage?.url || "/placeholder.svg?height=100&width=100"} 
+                  alt={doctor?.name || "Doctor"} 
+                />
+                <AvatarFallback className="bg-emerald-700 text-white">
+                  {doctor?.name ? doctor.name.split(' ').map(n => n[0]).join('') : 'DR'}
+                </AvatarFallback>
               </Avatar>
             </div>
           </CardHeader>
@@ -244,7 +290,7 @@ export default function DoctorChatInterface() {
               </CardHeader>
               <CardContent className="p-4">
                 <p className="text-green-700 mb-4 text-sm">
-                  Connect face-to-face with Dr. Richard James for a more detailed consultation.
+                  Connect face-to-face with {doctor ? `Dr. ${doctor.name}` : 'your doctor'} for a more detailed consultation.
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <Button asChild variant="outline" className="border-green-200 hover:bg-green-50 text-green-700">
@@ -295,34 +341,47 @@ export default function DoctorChatInterface() {
                 <CardTitle className="text-lg text-green-800">Doctor Information</CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-                <div className="flex items-center gap-4">
-                  <Avatar className="h-16 w-16 border-2 border-green-100">
-                    <AvatarImage src="/placeholder.svg?height=100&width=100" alt="Dr. Richard James" />
-                    <AvatarFallback className="bg-emerald-100 text-emerald-700">RJ</AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <h3 className="font-medium text-green-800 text-lg">Dr. Richard James</h3>
-                    <p className="text-sm text-green-600">General Physician</p>
-                    <div className="flex items-center mt-1">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <svg key={star} className="w-4 h-4 text-yellow-500 fill-current" viewBox="0 0 24 24">
-                          <path d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" />
-                        </svg>
-                      ))}
-                      <span className="text-xs text-green-600 ml-1">(120 reviews)</span>
+                {doctor ? (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-16 w-16 border-2 border-green-100">
+                        <AvatarImage 
+                          src={doctor.profileImage?.url || "/placeholder.svg?height=100&width=100"} 
+                          alt={doctor.name} 
+                        />
+                        <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                          {doctor.name.split(' ').map(n => n[0]).join('')}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-medium text-green-800 text-lg">Dr. {doctor.name}</h3>
+                        <p className="text-sm text-green-600">{doctor.specialty.join(', ')}</p>
+                        <div className="flex items-center mt-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <svg key={star} className="w-4 h-4 text-yellow-500 fill-current" viewBox="0 0 24 24">
+                              <path d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" />
+                            </svg>
+                          ))}
+                          <span className="text-xs text-green-600 ml-1">(120 reviews)</span>
+                        </div>
+                      </div>
                     </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-green-50 p-2 rounded-md">
+                        <p className="text-green-600 font-medium">Experience</p>
+                        <p className="text-green-800">{doctor.experience}+ years</p>
+                      </div>
+                      <div className="bg-green-50 p-2 rounded-md">
+                        <p className="text-green-600 font-medium">Hospital</p>
+                        <p className="text-green-800">{doctor.hospital_affiliation}</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-green-600" />
                   </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                  <div className="bg-green-50 p-2 rounded-md">
-                    <p className="text-green-600 font-medium">Experience</p>
-                    <p className="text-green-800">15+ years</p>
-                  </div>
-                  <div className="bg-green-50 p-2 rounded-md">
-                    <p className="text-green-600 font-medium">Languages</p>
-                    <p className="text-green-800">English, Spanish</p>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>

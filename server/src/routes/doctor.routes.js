@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { registerDoctor, loginDoctor, updateDoctor, deleteDoctor, getVerifiedDoctorProfile, updateDoctorAvailability, getAllApprovedDoctors, PostAllDoctors } from "../controllers/doctor.controllers.js";
+import { registerDoctor, loginDoctor, updateDoctor, deleteDoctor, getVerifiedDoctorProfile, updateDoctorAvailability, getAllApprovedDoctors, PostAllDoctors, getDoctorPatients, getPatientProfile } from "../controllers/doctor.controllers.js";
 import  verifyJWT from "../middlewares/auth.middlewares.js";
 import passport from "../utils/passport.js";
 import { getDoctor } from "../middlewares/getDoctor.middlewares.js";
@@ -101,4 +101,9 @@ router.route("/approved").get(getAllApprovedDoctors);
 
 router.route("/PostDoc").post(PostAllDoctors);
 //http://localhost:8000/api/v1/doctors/getDoc
+
+// Chat Routes
+router.route("/:doctorId/patients").get(verifyJWT, getDoctorPatients);
+router.route("/patient/:patientId/profile").get(verifyJWT, getPatientProfile);
+
 export default router;

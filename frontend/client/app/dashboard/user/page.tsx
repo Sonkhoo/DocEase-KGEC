@@ -4,9 +4,9 @@ import type React from "react"
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import type { Doctor } from "@/components/doctor-list"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Calendar, FileText, Activity, Pill, Clock, ChevronRight, Upload, FileImage } from "lucide-react"
+import { Calendar, FileText, Activity, Pill, Clock, ChevronRight, Upload, FileImage, AlertCircle, Check, X } from "lucide-react"
 import { DoctorsList } from "@/components/doctor-list"
 import { AppointmentModal } from "@/components/appointment-modal"
 import { FloatingPaper } from "@/components/common/floating-paper"
@@ -16,6 +16,65 @@ import { useUser } from "@/app/_context/UserContext"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+
+// Define Doctor interface to fix type errors
+interface Doctor {
+  _id: string;
+  name: string;
+  specialty: string[];
+  experience: number;
+  hospital_affiliation?: string;
+  consultation_fee?: number;
+  rating?: number;
+  profileImage?: {
+    url: string;
+  };
+}
+
+// Define interfaces for the structured medication data
+interface Medication {
+  name: string;
+  dosage: string;
+  instructions: string;
+}
+
+interface PrescriptionAnalysisResult {
+  success: boolean;
+  raw_text: string;
+  corrected_text: string;
+  medications: Medication[];
+  parsed_data: {
+    doctor_name?: string;
+    patient_name?: string;
+    date?: string;
+    hospital?: string;
+    notes?: string;
+  };
+  processing_time_ms: number;
+  error?: string;
+}
+
+// Function to decode medical abbreviations
+const decodeMedicalAbbreviation = (abbr: string): string => {
+  const abbreviations: Record<string, string> = {
+    "QD": "once daily",
+    "BID": "twice daily",
+    "TID": "three times daily",
+    "QID": "four times daily",
+    "AC": "before meals",
+    "PC": "after meals",
+    "PRN": "as needed",
+    "PO": "by mouth",
+    "SL": "sublingual (under the tongue)",
+    "IM": "intramuscular",
+    "IV": "intravenous",
+    "SC": "subcutaneous"
+  };
+  
+  return abbreviations[abbr.toUpperCase()] || abbr;
+};
 
 export default function UserHealthDashboard() {
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false)
@@ -24,8 +83,9 @@ export default function UserHealthDashboard() {
   const { user } = useUser()
   const [prescription, setPrescription] = useState<File | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<PrescriptionAnalysisResult | null>(null)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [showSavedSuccess, setShowSavedSuccess] = useState(false)
 
   const openAppointmentModal = (doctor: Doctor) => {
     setSelectedDoctor(doctor)
@@ -41,6 +101,7 @@ export default function UserHealthDashboard() {
       setPrescription(e.target.files[0])
       setAnalysisResult(null)
       setAnalysisError(null)
+      setShowSavedSuccess(false)
     }
   }
 
@@ -49,6 +110,7 @@ export default function UserHealthDashboard() {
   
     setIsAnalyzing(true)
     setAnalysisError(null)
+    setShowSavedSuccess(false)
   
     try {
       const formData = new FormData()
@@ -65,9 +127,9 @@ export default function UserHealthDashboard() {
       const data = await response.json()
   
       if (response.ok && data.success) {
-        setAnalysisResult(data.corrected_text)
+        setAnalysisResult(data)
       } else {
-        setAnalysisError("Failed to analyze prescription. Please try again.")
+        setAnalysisError(data.error || "Failed to analyze prescription. Please try again.")
       }
     } catch (error) {
       setAnalysisError("An error occurred while analyzing the prescription. Please try again.")
@@ -75,6 +137,33 @@ export default function UserHealthDashboard() {
     } finally {
       setIsAnalyzing(false)
     }
+  }
+
+  const savePrescriptionToMedicationReminders = () => {
+    // In a real app, this would save to a database or state management
+    setShowSavedSuccess(true)
+    
+    // Reset after 3 seconds
+    setTimeout(() => {
+      setShowSavedSuccess(false)
+    }, 3000)
+  }
+
+  // Process instructions to display with decoded abbreviations
+  const processInstructions = (instruction: string): string => {
+    // Check for common medical abbreviations
+    let processed = instruction;
+    const abbrs = ["QD", "BID", "TID", "QID", "AC", "PC", "PRN", "PO", "SL", "IM", "IV", "SC"];
+    
+    for (const abbr of abbrs) {
+      const regex = new RegExp(`\\b${abbr}\\b`, 'gi');
+      if (regex.test(processed)) {
+        const decoded = decodeMedicalAbbreviation(abbr);
+        processed = processed.replace(regex, `${abbr} (${decoded})`);
+      }
+    }
+    
+    return processed;
   }
 
   return (
@@ -183,29 +272,122 @@ export default function UserHealthDashboard() {
 
                   {analysisError && (
                     <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
                       <AlertDescription>{analysisError}</AlertDescription>
                     </Alert>
                   )}
+                  
+                  {showSavedSuccess && (
+                    <Alert className="bg-green-50 border-green-200 text-green-800">
+                      <Check className="h-4 w-4 text-green-600" />
+                      <AlertDescription>Medications saved to your reminders!</AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  {/* Sample prescription for testing */}
+                  <div className="border border-dashed border-gray-300 rounded-lg p-4 mt-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Test with sample prescription:</h4>
+                    <pre className="text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 p-2 rounded overflow-auto max-h-[100px]">
+                      DEA GB 05455616 LIC 976269 . MEDICAL CENTRE 824 14 Street New York, NY 10043, USA name Joba Smith, age 34 address_62 Example St Mt. patient 09-01-12 Betamethasone 100mg - 1 tab BID Darzalex 10 mg - 1 tab QD Cimetidine 500 mg - 2 tabs TID Omeprazole 20 mg - 1 tab QD Int 5 Dr. Steve Jacobson signature
+                    </pre>
+                  </div>
                 </div>
 
                 <div className="bg-white bg-opacity-50 rounded-lg p-4">
                   <h3 className="font-medium mb-2">Analysis Result</h3>
                   {analysisResult ? (
-                    <div className="space-y-2">
-                      <Textarea value={analysisResult} readOnly className="min-h-[150px] bg-white" />
-                      <div className="flex flex-col space-y-2">
-                        <h4 className="font-medium text-sm">Medications Identified:</h4>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                          {analysisResult
-                            .split("\n")
-                            .filter((line) => line.trim())
-                            .map((line, index) => (
-                              <li key={index} className="text-gray-700">
-                                {line}
-                              </li>
-                            ))}
-                        </ul>
+                    <div className="space-y-4">
+                      {/* Prescription Info */}
+                      {analysisResult.parsed_data && (
+                        <div className="bg-white rounded-lg p-3 shadow-sm">
+                          <h4 className="font-medium text-sm mb-2 text-green-700">Prescription Information</h4>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            {analysisResult.parsed_data.doctor_name && (
+                              <div>
+                                <span className="font-medium">Doctor:</span> {analysisResult.parsed_data.doctor_name}
+                              </div>
+                            )}
+                            {analysisResult.parsed_data.patient_name && (
+                              <div>
+                                <span className="font-medium">Patient:</span> {analysisResult.parsed_data.patient_name}
+                              </div>
+                            )}
+                            {analysisResult.parsed_data.date && (
+                              <div>
+                                <span className="font-medium">Date:</span> {analysisResult.parsed_data.date}
+                              </div>
+                            )}
+                            {analysisResult.parsed_data.hospital && (
+                              <div>
+                                <span className="font-medium">Hospital:</span> {analysisResult.parsed_data.hospital}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Medications Table */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <h4 className="font-medium text-sm text-green-700">Medications</h4>
+                          {analysisResult.medications && analysisResult.medications.length > 0 && (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="text-xs" 
+                              onClick={savePrescriptionToMedicationReminders}
+                            >
+                              <Pill className="h-3 w-3 mr-1" /> Save to Reminders
+                            </Button>
+                          )}
+                        </div>
+                        
+                        {analysisResult.medications && analysisResult.medications.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Dosage</TableHead>
+                                <TableHead>Instructions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {analysisResult.medications.map((med, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-medium">
+                                    {med.name}
+                                    <Badge variant="outline" className="ml-2 text-xs">Rx</Badge>
+                                  </TableCell>
+                                  <TableCell>{med.dosage}</TableCell>
+                                  <TableCell>{processInstructions(med.instructions)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <p className="text-sm text-gray-500 italic">No medications identified</p>
+                        )}
                       </div>
+                      
+                      {/* Additional Notes */}
+                      {analysisResult.parsed_data.notes && (
+                        <div>
+                          <h4 className="font-medium text-sm mb-2 text-green-700">Notes</h4>
+                          <p className="text-sm bg-white p-3 rounded-lg shadow-sm">{analysisResult.parsed_data.notes}</p>
+                        </div>
+                      )}
+                      
+                      {/* Raw Text (Collapsible) */}
+                      <details className="mt-4">
+                        <summary className="text-sm font-medium text-green-700 cursor-pointer">
+                          View Raw Text
+                        </summary>
+                        <Textarea
+                          value={analysisResult.corrected_text}
+                          readOnly
+                          className="mt-2 min-h-[150px] bg-white text-sm"
+                        />
+                      </details>
                     </div>
                   ) : (
                     <div className="flex items-center justify-center h-[200px] text-gray-500 italic">

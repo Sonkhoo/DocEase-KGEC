@@ -56,6 +56,38 @@ async def determine_specialty(query: str):
     except Exception as e:
         return None
 
+async def get_llm_medical_response(query: str):
+    """
+    Get a general medical information response from the LLM for any medical query.
+    """
+    try:
+        system_prompt = """You are DocAssist, a helpful and informative medical assistant. 
+        Your purpose is to provide accurate medical information about symptoms, conditions, treatments, and general health advice.
+        
+        Guidelines:
+        1. Always provide factual, evidence-based medical information
+        2. Be thorough but concise in your explanations
+        3. Use simple language that patients can understand
+        4. Include preventive measures and self-care tips when appropriate
+        5. For serious symptoms, always recommend consulting a healthcare professional
+        6. Never provide definitive diagnoses - only information and guidance
+        7. Avoid prescribing specific medications or dosages
+        8. When discussing treatments, mention both benefits and potential risks
+        9. Always maintain a calm, reassuring tone
+        
+        Remember to end your responses with a disclaimer that you're providing general information, not medical advice, and serious concerns should be addressed by a healthcare professional."""
+        
+        response = llm.invoke(
+            f"""System: {system_prompt}
+            
+            User: {query}
+            
+            Assistant:"""
+        )
+        return response.content.strip()
+    except Exception as e:
+        return "I'm sorry, I'm having trouble processing your medical query. Please try again or consult a healthcare professional directly."
+
 async def find_doctor_by_specialty(specialty: str):
     """
     Query MongoDB to find a doctor by their specialty.
@@ -75,6 +107,25 @@ async def find_doctor_by_name(name: str):
         return f"Dr. {doctor['name']} specializes in {specialties}."
     return f"No doctor found with the name {name}."
 
+async def determine_query_type(query: str):
+    """
+    Determine if the query is about finding a doctor or seeking medical information.
+    """
+    try:
+        # Check if query is seeking a doctor recommendation
+        doctor_keywords = ["doctor", "specialist", "physician", "recommend", "refer", "consult", "appointment"]
+        
+        # Convert query to lowercase for case-insensitive matching
+        query_lower = query.lower()
+        
+        # Check if any doctor keywords are in the query
+        is_doctor_query = any(keyword in query_lower for keyword in doctor_keywords)
+        
+        return "doctor" if is_doctor_query else "medical_info"
+    except Exception:
+        # Default to medical info if determination fails
+        return "medical_info"
+
 async def get_specialty_and_doctor(query: str):
     """
     First check predefined specialties, then fallback to LLM if necessary.
@@ -82,7 +133,7 @@ async def get_specialty_and_doctor(query: str):
     query_lower = query.lower()
     specialty = next((spec for cond, spec in condition_to_specialty.items() if cond in query_lower), None)
 
-    # If specialty is not found, use LLM
+    # If specialty is not found, use LLM to determine specialty
     if not specialty:
         specialty = await determine_specialty(query)
     
@@ -95,10 +146,22 @@ async def get_specialty_and_doctor(query: str):
 async def chat(query: str):
     """
     Chat endpoint: Determines whether to return a doctor recommendation
-    or an AI-generated response.
+    or an AI-generated medical information response.
     """
-    response = await get_specialty_and_doctor(query)
-    return {"response": response}
+    try:
+        # Determine if the query is about finding a doctor or seeking medical information
+        query_type = await determine_query_type(query)
+        
+        if query_type == "doctor":
+            # If it's a doctor query, get doctor recommendation
+            response = await get_specialty_and_doctor(query)
+        else:
+            # If it's a medical information query, get LLM response
+            response = await get_llm_medical_response(query)
+        
+        return {"response": response}
+    except Exception as e:
+        return {"response": "I'm sorry, I encountered an error processing your request. Please try again with a different question."}
 
 @app.get("/doctor/search/")
 async def search_doctor(name: str = Query(None), specialty: str = Query(None)):

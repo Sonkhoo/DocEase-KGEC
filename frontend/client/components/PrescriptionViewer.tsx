@@ -16,7 +16,7 @@ import { contractabi } from '@/contract/contractABI'
 import { ethers } from 'ethers'
 import { Loader2, Plus } from 'lucide-react'
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS1 as `0x${string}`
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS1 
 
 interface MedicationItem {
   name: string;

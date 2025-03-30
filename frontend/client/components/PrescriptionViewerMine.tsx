@@ -1,508 +1,447 @@
-'use client'
+"use client"
 
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
-}
-
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
+import { useState, useEffect, useRef } from "react"
+import { useParams } from "next/navigation"
+import axios from "axios"
+import { io } from "socket.io-client"
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { contractabi } from '@/contract/contractABI'
-import { ethers } from 'ethers'
-import { Loader2, Plus, AlertCircle } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Loader2, Video, Send, CheckCircle, Phone, Calendar, FileText } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
+import { cn } from "@/lib/utils"
+import { useUser } from "@/app/_context/UserContext"
+import { toast } from "sonner"
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS1 as `0x${string}`
+// Socket.io server URL
+const SOCKET_URL = 'http://localhost:8000'
 
-interface MedicationItem {
-  name: string;
-  dosage: string;
+// Message interface
+interface Message {
+  id: string
+  text: string
+  senderId: string
+  timestamp: Date
 }
 
-interface PrescriptionMetadata {
-  tokenId: string;
-  patientName: string;
-  doctorName: string;
-  medications: MedicationItem[];
-  image: string;
+// Doctor interface
+interface Doctor {
+  id: string
+  name: string
+  specialization: string
+  image?: string
+  rating: number
+  reviewCount: number
+  experience: string
+  languages: string[]
+  online: boolean
 }
 
-interface NFTListing {
-  tokenId: bigint;
-  price: bigint;
-  seller: string;
-  owner: string;
-  listed: boolean;
-}
+export default function DoctorChatInterface() {
+  // Get doctor ID from URL params
+  const params = useParams()
+  const doctorId = params?.id as string
+  
+  // Get user from custom hook
+  const { user, isLoading: userLoading, isAuthenticated } = useUser()
+  
+  // User ID
+  const userId = user?.id || "temp-user"
+  
+  const [message, setMessage] = useState("")
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isTyping, setIsTyping] = useState(false)
+  const [isConnected, setIsConnected] = useState(false)
+  const [doctorData, setDoctorData] = useState<Doctor | null>(null)
+  const [isLoadingDoctor, setIsLoadingDoctor] = useState(true)
+  const socketRef = useRef<any>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
-interface PrescriptionWithDetails extends PrescriptionMetadata {
-  price: string;
-  isListed: boolean;
-  seller: string;
-  owner: string;
-}
-
-// Utility function to convert IPFS URL to HTTP URL
-const convertIpfsToHttp = (url: string) => {
-  if (!url) return ''
-  return url.startsWith("ipfs://")
-    ? url.replace("ipfs://", "https://gateway.pinata.cloud/ipfs/")
-    : url
-}
-
-export default function MyPrescriptions() {
-  const [myPrescriptions, setMyPrescriptions] = useState<PrescriptionWithDetails[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedPrescription, setSelectedPrescription] = useState<PrescriptionWithDetails | null>(null)
-  const [listingPrescription, setListingPrescription] = useState<PrescriptionWithDetails | null>(null)
-  const [listPrice, setListPrice] = useState('')
-  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null)
-  const [signer, setSigner] = useState<ethers.Signer | null>(null)
-  const [contract, setContract] = useState<ethers.Contract | null>(null)
-  const [userAddress, setUserAddress] = useState<string>('')
-  const [transactionPending, setTransactionPending] = useState(false)
-
-  // Initialize provider, signer, and contract
+  // Fetch doctor data when doctorId changes
   useEffect(() => {
-    const init = async () => {
-      if (window.ethereum) {
-        try {
-          const provider = new ethers.BrowserProvider(window.ethereum)
-          const signer = await provider.getSigner()
-          const address = await signer.getAddress()
-          const contract = new ethers.Contract(CONTRACT_ADDRESS, contractabi, signer)
-          
-          setProvider(provider)
-          setSigner(signer)
-          setContract(contract)
-          setUserAddress(address)
-        } catch (error) {
-          console.error("Error initializing web3:", error)
-          setError("Failed to connect to your wallet. Please make sure MetaMask is installed and unlocked.")
-        }
-      } else {
-        setError("Web3 provider not found. Please install MetaMask to use this application.")
-      }
-    }
-    init()
-  }, [])
+    if (!doctorId) return
 
-  // Get user's prescriptions
-  useEffect(() => {
-    const fetchMyPrescriptions = async () => {
-      if (!contract || !userAddress) return
-
+    const fetchDoctorData = async () => {
+      setIsLoadingDoctor(true)
       try {
-        setLoading(true)
-        setError(null)
-
-        const myNFTs = await contract.getMyNFTs()
-        const prescriptionsData = await Promise.all(
-          myNFTs.map(async (nft: NFTListing) => {
-            const tokenURI = await contract.tokenURI(nft.tokenId)
-            if (!tokenURI) throw new Error(`No URI found for token ${nft.tokenId}`)
-
-            const metadata = await fetchPrescriptionMetadata(nft.tokenId, tokenURI)
-            return {
-              ...metadata,
-              price: ethers.formatEther(nft.price) + ' ETH',
-              isListed: nft.listed,
-              seller: nft.seller,
-              owner: nft.owner
-            }
-          })
-        )
-
-        setMyPrescriptions(prescriptionsData)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred while fetching your prescriptions')
-        console.error('Error fetching prescription details:', err)
+        const response = await axios.get(`http://localhost:8000/api/v1/doctors/profile/${doctorId}`);
+        console.log('Doctor data received:', response.data.data.user);
+        setDoctorData({
+          id: response.data.data.user._id,
+          name: response.data.data.user.name,
+          specialization: response.data.data.user.specialization || "General Physician",
+          image: response.data.data.user.avatar?.url,
+          rating: response.data.data.user.rating || 4.5,
+          reviewCount: response.data.data.user.reviewCount || 0,
+          experience: response.data.data.user.experience || "10+ years",
+          languages: response.data.data.user.languages || ["English"],
+          online: response.data.data.user.online || false
+        });
+      } catch (error) {
+        console.error('Error fetching doctor data:', error);
+        toast.error('Failed to load doctor information');
       } finally {
-        setLoading(false)
+        setIsLoadingDoctor(false);
+      }
+    };
+
+    fetchDoctorData();
+  }, [doctorId]);
+
+  // Initialize socket connection
+  useEffect(() => {
+    if (!userLoading && isAuthenticated && doctorId) {
+      socketRef.current = io(SOCKET_URL, {
+        query: { userId, doctorId }
+      })
+
+      socketRef.current.on('connect', () => {
+        setIsConnected(true)
+        console.log('Connected to socket server')
+      })
+
+      socketRef.current.on('private_message', (message: Message) => {
+        setMessages(prev => [...prev, message])
+        setIsTyping(false)
+      })
+
+      // Load initial messages
+      const loadInitialMessages = async () => {
+        try {
+          const response = await axios.get(`http://localhost:8000/api/v1/messages/${doctorId}`, {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          setMessages(response.data.messages.map((msg: any) => ({
+            id: msg._id,
+            text: msg.content,
+            senderId: msg.sender,
+            timestamp: new Date(msg.createdAt)
+          })));
+        } catch (error) {
+          console.error('Error loading messages:', error);
+        }
+      }
+
+      loadInitialMessages();
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect()
+        }
       }
     }
+  }, [userId, userLoading, isAuthenticated, doctorId])
 
-    if (contract && userAddress) {
-      fetchMyPrescriptions()
-    }
-  }, [contract, userAddress, transactionPending])
+  // Auto-scroll to bottom of messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
-  // Fetch metadata for a prescription
-  const fetchPrescriptionMetadata = async (tokenId: bigint, tokenURI: string) => {
-    const httpUrl = convertIpfsToHttp(tokenURI);
-    console.log("Fetching metadata from:", httpUrl);
-
-    try {
-      const response = await fetch(httpUrl);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      const contentType = response.headers.get("content-type");
-      console.log("Content-Type:", contentType);
-
-      let metadata;
-      if (contentType?.includes("application/json")) {
-        metadata = await response.json();
-        console.log("Metadata:", metadata);
-      } else {
-        throw new Error(`Unexpected content type: ${contentType}`);
+  const handleSendMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    
+    if (message.trim() && socketRef.current) {
+      const newMessage: Message = {
+        id: Math.random().toString(36).substr(2, 9),
+        text: message,
+        senderId: userId,
+        timestamp: new Date()
       }
 
-      const imageUrl = convertIpfsToHttp(metadata.prescriptionImage);
-      console.log("Image URL:", imageUrl);
-
-      // Handle medications array or backward compatibility for older format
-      const medications = metadata.medications || [{ 
-        name: metadata.medication || '', 
-        dosage: metadata.dosage || '' 
-      }];
-
-      return {
-        tokenId: tokenId.toString(),
-        patientName: metadata.patientName || `Prescription ${tokenId}`,
-        doctorName: metadata.doctorName || 'Unknown Doctor',
-        medications: medications,
-        image: imageUrl,
-      };
-    } catch (error) {
-      console.error(`Error fetching metadata for token ${tokenId}:`, error);
-      throw error;
-    }
-  };
-
-  // Handle listing a prescription for sale
-  const handleListForSale = async () => {
-    if (!listingPrescription || !listPrice || !contract) return
-
-    try {
-      setTransactionPending(true)
-      const priceInWei = ethers.parseEther(listPrice)
-      const tx = await contract.listNFT(
-        BigInt(listingPrescription.tokenId),
-        priceInWei
-      )
-      await tx.wait()
-      setListingPrescription(null)
-      setListPrice('')
-    } catch (error) {
-      console.error("Error listing prescription:", error)
-      setError("Failed to list prescription. Please try again.")
-    } finally {
-      setTransactionPending(false)
+      // Add message to local state
+      setMessages(prev => [...prev, newMessage])
+      
+      // Send message via socket
+      socketRef.current.emit('private_message', {
+        recipientId: doctorId,
+        message: newMessage
+      })
+      
+      // Also send to API
+      axios.post(`http://localhost:8000/api/v1/messages/send`, {
+        content: message,
+        recipient: doctorId
+      }, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      }).catch(error => {
+        console.error('Error sending message:', error);
+      });
+      
+      setMessage("")
+      setIsTyping(true)
     }
   }
 
-  // Handle removing a prescription from sale
-  const handleRemoveFromSale = async (tokenId: string) => {
-    if (!contract) return
-
-    try {
-      setTransactionPending(true)
-      const tx = await contract.cancelListing(BigInt(tokenId))
-      await tx.wait()
-    } catch (error) {
-      console.error("Error removing prescription from sale:", error)
-      setError("Failed to remove prescription from sale. Please try again.")
-    } finally {
-      setTransactionPending(false)
-    }
-  }
-
-  // Get primary medication for card display
-  const getPrimaryMedication = (medications: MedicationItem[]) => {
-    if (!medications || medications.length === 0) return { name: 'No medication', dosage: '' };
-    return medications[0];
-  };
-
-  // Render loading state
-  if (loading) {
+  if (userLoading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <Loader2 className="w-16 h-16 text-green-400 animate-spin" />
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-12 w-12 animate-spin text-green-500" />
       </div>
     )
   }
 
-  // Render error state
-  if (error) {
+  if (!isAuthenticated) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-red-500 text-center">
-          <AlertCircle className="w-12 h-12 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Error</h2>
-          <p>{error}</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle>Authentication Required</CardTitle>
+            <CardDescription>Please log in to access the chat interface.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="w-full">
+              <a href="/login">Login</a>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  // Render empty state
-  if (myPrescriptions.length === 0) {
+  if (!doctorId) {
     return (
-      <div className="min-h-screen bg-white text-green-700">
-        <div className="container mx-auto px-4 py-8">
-          <h1 className="text-5xl font-bold mb-12 text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600">
-            My Prescriptions
-          </h1>
-          <div className="flex flex-col items-center justify-center p-12 bg-green-50 rounded-xl border border-green-500/20">
-            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-6">
-              <Plus className="w-10 h-10 text-green-500" />
-            </div>
-            <h2 className="text-2xl font-semibold text-green-600 mb-2">No prescriptions found</h2>
-            <p className="text-green-500 text-center max-w-md mb-6">
-              You don't have any prescriptions in your collection yet. They'll appear here once you acquire them.
-            </p>
-          </div>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle>Doctor Not Found</CardTitle>
+            <CardDescription>Invalid doctor ID specified.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild className="w-full">
+              <a href="/doctors">Browse Doctors</a>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-white text-green-700">
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-5xl font-bold mb-12 text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600">
-          My Prescriptions
-        </h1>
-
-        <div className="grid grid-cols-1 sm:grid-cols-1 gap-6 p-4">
-  {myPrescriptions.map((prescription) => {
-    const primaryMedication = getPrimaryMedication(prescription.medications);
-    const medicationCount = prescription.medications.length;
-    
-    return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-white p-4 md:p-8">
       <motion.div
-        key={prescription.tokenId}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="w-full"
+        className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6"
       >
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-500/[0.2] hover:shadow-2xl hover:shadow-green-500/[0.1] transition-all duration-300 h-full flex flex-col">
-          <div className="flex flex-col gap-4">
-            <div 
-              className="w-full cursor-pointer"
-              onClick={() => setSelectedPrescription(prescription)}
-            >
-              <div className="aspect-[4/3] w-full relative overflow-hidden rounded-xl">
-                <img
-                  src={prescription.image}
-                  className="absolute inset-0 w-full h-full object-cover transform transition-transform duration-300 hover:scale-110"
-                  alt={prescription.patientName}
-                />
-                {prescription.isListed && (
-                  <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-md text-xs font-medium">
-                    Listed
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 min-h-[120px]">
-              <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600 truncate">
-                {prescription.patientName}
-              </h3>
-              <div className="space-y-2 mt-1">
-                <div className="flex flex-col">
-                  <span className="text-green-500 text-sm font-medium">Doctor:</span>
-                  <span className="text-green-600 truncate">{prescription.doctorName}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-green-500 text-sm font-medium">Medication:</span>
-                  <span className="text-green-600 truncate">
-                    {primaryMedication.name}
-                    {medicationCount > 1 && ` +${medicationCount - 1} more`}
-                  </span>
-                </div>
-                {prescription.isListed && (
-                  <div className="flex flex-col">
-                    <span className="text-green-500 text-sm font-medium">Price:</span>
-                    <span className="text-green-600 truncate">{prescription.price}</span>
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* Connection Status */}
+        {!isConnected && (
+          <div className="lg:col-span-3 bg-red-100 text-red-700 p-2 rounded-lg text-center">
+            Disconnected from chat server. Please check your connection.
           </div>
+        )}
 
-          <div className="flex gap-2 mt-auto pt-4">
-            <Button
-              className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white text-xs sm:text-sm font-medium transition-colors duration-300"
-              onClick={() => setSelectedPrescription(prescription)}
-            >
-              View Details
-            </Button>
-            {prescription.isListed ? (
-              <Button
-                className="flex-1 bg-white text-red-500 text-xs sm:text-sm font-medium transition-colors duration-300 hover:bg-red-50 border border-red-200"
-                onClick={() => handleRemoveFromSale(prescription.tokenId)}
-                disabled={transactionPending}
-              >
-                {transactionPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                    <span className="hidden sm:inline">Processing</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="hidden sm:inline">Remove</span>
-                    <span className="sm:hidden">Remove</span>
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button
-                className="flex-1 bg-white text-green-700 text-xs sm:text-sm font-medium transition-colors duration-300 hover:bg-green-50 border border-green-200"
-                onClick={() => {
-                  setListingPrescription(prescription)
-                  setListPrice('')
-                }}
-              >
-                List for Sale
-              </Button>
-            )}
-          </div>
-        </div>
-      </motion.div>
-    );
-  })}
-</div>
-
-        {/* Dialog for Prescription Details */}
-        <AnimatePresence>
-          {selectedPrescription && (
-            <Dialog open={!!selectedPrescription} onOpenChange={() => setSelectedPrescription(null)}>
-              <DialogContent className="sm:max-w-[525px] bg-gradient-to-br from-green-50 to-green-100 text-green-700 border border-green-500/20">
-                <DialogHeader>
-                  <DialogTitle className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600">
-                    {selectedPrescription.patientName}
-                  </DialogTitle>
-                  <DialogDescription className="text-green-600">
-                    Prescription Details
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="mt-4">
-                  <img 
-                    src={selectedPrescription.image} 
-                    alt={selectedPrescription.patientName} 
-                    className="w-full h-64 object-cover rounded-lg mb-4 shadow-lg shadow-green-500/20" 
-                  />
-                  <div className="mb-4">
-                    <h3 className="text-green-700 font-semibold mb-1">Doctor:</h3>
-                    <p className="text-green-600">{selectedPrescription.doctorName}</p>
-                  </div>
-                  <div className="mb-4">
-                    <h3 className="text-green-700 font-semibold mb-1">Medications:</h3>
-                    <div className="space-y-3 mt-2 max-h-48 overflow-y-auto pr-2">
-                      {selectedPrescription.medications.map((med, index) => (
-                        <div 
-                          key={index} 
-                          className="bg-white rounded-lg p-3 shadow-sm border border-green-200"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-medium text-green-700">{med.name}</p>
-                              <p className="text-green-600 text-sm">{med.dosage}</p>
-                            </div>
-                            <div className="bg-green-100 text-green-700 rounded-full h-6 w-6 flex items-center justify-center font-medium text-xs">
-                              {index + 1}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+        {/* Chat Section */}
+        <Card className="lg:col-span-2 bg-white shadow-md border-green-100">
+          <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-t-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-xl md:text-2xl">
+                  Chat with Dr. {doctorData?.name || 'Doctor'}
+                </CardTitle>
+                <CardDescription className="text-green-50">
+                  {doctorData?.specialization || 'Specialist'} • 
+                  {doctorData?.online ? (isConnected ? "Online" : "Offline") : "Offline"}
+                </CardDescription>
+              </div>
+              <Avatar className="h-12 w-12 border-2 border-white">
+                <AvatarImage src={doctorData?.image || "/placeholder.svg"} alt={`Dr. ${doctorData?.name}`} />
+                <AvatarFallback className="bg-emerald-700 text-white">
+                  {doctorData?.name ? doctorData.name.split(' ').map(n => n[0]).join('') : 'DR'}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 md:p-6">
+            <div className="h-[350px] md:h-[450px] overflow-y-auto space-y-4 p-2">
+              <AnimatePresence>
+                {messages.map((msg) => (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className={`flex ${msg.senderId === userId ? "justify-end" : "justify-start"}`}
+                  >
+                    {msg.senderId === doctorId && (
+                      <Avatar className="h-8 w-8 mr-2 mt-1 flex-shrink-0">
+                        <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
+                          {doctorData?.name ? doctorData.name.split(' ').map(n => n[0]).join('') : 'DR'}
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
+                    <div
+                      className={cn(
+                        "max-w-[75%] p-3 rounded-lg shadow-sm",
+                        msg.senderId === userId
+                          ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-tr-none"
+                          : "bg-green-50 text-green-800 border border-green-100 rounded-tl-none",
+                      )}
+                    >
+                      <p>{msg.text}</p>
+                      <span className="text-xs opacity-75">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
                     </div>
-                  </div>
-                  {selectedPrescription.isListed && (
-                    <div className="mb-4">
-                      <h3 className="text-green-700 font-semibold mb-1">Listing Status:</h3>
-                      <div className="bg-green-100 text-green-700 rounded-lg p-3 shadow-sm border border-green-200">
-                        <p className="font-medium">Listed for {selectedPrescription.price}</p>
+                  </motion.div>
+                ))}
+                {isTyping && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-start"
+                  >
+                    <Avatar className="h-8 w-8 mr-2 mt-1 flex-shrink-0">
+                      <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
+                        {doctorData?.name ? doctorData.name.split(' ').map(n => n[0]).join('') : 'DR'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="bg-green-50 text-green-800 p-3 rounded-lg border border-green-100 rounded-tl-none shadow-sm">
+                      <div className="flex space-x-1">
+                        <div
+                          className="h-2 w-2 bg-green-500 rounded-full animate-bounce"
+                          style={{ animationDelay: "0ms" }}
+                        ></div>
+                        <div
+                          className="h-2 w-2 bg-green-500 rounded-full animate-bounce"
+                          style={{ animationDelay: "150ms" }}
+                        ></div>
+                        <div
+                          className="h-2 w-2 bg-green-500 rounded-full animate-bounce"
+                          style={{ animationDelay: "300ms" }}
+                        ></div>
                       </div>
                     </div>
-                  )}
-                  <div className="mb-4">
-                    <h3 className="text-green-700 font-semibold mb-1">Token ID:</h3>
-                    <p className="text-green-600">{selectedPrescription.tokenId}</p>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-end">
-                  <Button 
-                    onClick={() => setSelectedPrescription(null)} 
-                    variant="secondary" 
-                    className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
-                  >
-                    Close
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </AnimatePresence>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <div ref={messagesEndRef} />
+            </div>
+          </CardContent>
+          <CardFooter className="p-4 border-t border-green-100 bg-green-50/50">
+            <form onSubmit={handleSendMessage} className="flex w-full gap-2">
+              <Input
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 bg-white border-green-200 focus-visible:ring-green-500"
+                disabled={!isConnected}
+              />
+              <Button 
+                type="submit"
+                disabled={!isConnected} 
+                className="bg-green-600 hover:bg-green-700 transition-colors"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </form>
+          </CardFooter>
+        </Card>
 
-        {/* Dialog for Listing Prescription */}
-        <AnimatePresence>
-          {listingPrescription && (
-            <Dialog open={!!listingPrescription} onOpenChange={() => setListingPrescription(null)}>
-              <DialogContent className="sm:max-w-[425px] bg-gradient-to-br from-green-50 to-green-100 text-green-700 border border-green-500/20">
-                <DialogHeader>
-                  <DialogTitle className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-600">
-                    List Prescription for Sale
-                  </DialogTitle>
-                  <DialogDescription className="text-green-600">
-                    Set your listing price in ETH
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="mt-4">
-                  <img 
-                    src={listingPrescription.image} 
-                    alt={listingPrescription.patientName} 
-                    className="w-full h-64 object-cover rounded-lg mb-4 shadow-lg shadow-green-500/20" 
-                  />
-                  <div className="mb-6">
-                    <Label htmlFor="price" className="text-green-700 font-semibold">Price (ETH)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      step="0.001"
-                      min="0"
-                      value={listPrice}
-                      onChange={(e) => setListPrice(e.target.value)}
-                      className="mt-1 bg-white border-green-200 focus:border-green-400 focus:ring-green-400"
-                      placeholder="0.01"
-                    />
+        {/* Sidebar with Video Call and Mint NFT */}
+        <div className="space-y-4">
+          {/* Video Call Section */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+          >
+            <Card className="bg-white shadow-md border-green-100 overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4">
+                <CardTitle className="text-lg flex items-center">
+                  <Video className="mr-2 h-5 w-5" />
+                  Video Consultation
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                <p className="text-green-700 mb-4 text-sm">
+                  Connect face-to-face with Dr. {doctorData?.name || 'the doctor'} for a more detailed consultation.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button asChild variant="outline" className="border-green-200 hover:bg-green-50 text-green-700">
+                    <a href="/schedule">
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Schedule
+                    </a>
+                  </Button>
+                  <Button asChild className="bg-green-600 hover:bg-green-700 transition-colors">
+                    <a href="/create-room">
+                      <Phone className="mr-2 h-4 w-4" />
+                      Join Now
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Doctor Profile Section */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+          >
+            <Card className="bg-white shadow-md border-green-100">
+              <CardHeader className="p-4 border-b border-green-100">
+                <CardTitle className="text-lg text-green-800">Doctor Information</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                {isLoadingDoctor ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-green-500" />
                   </div>
-                </div>
-                <div className="mt-6 flex justify-end space-x-2">
-                  <Button 
-                    onClick={() => setListingPrescription(null)} 
-                    variant="secondary" 
-                    className="bg-green-100 hover:bg-green-200 text-green-700"
-                    disabled={transactionPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleListForSale}
-                    disabled={!listPrice || transactionPending}
-                    className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
-                  >
-                    {transactionPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processing
-                      </>
-                    ) : (
-                      'List for Sale'
-                    )}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </AnimatePresence>
-      </div>
+                ) : doctorData ? (
+                  <>
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-16 w-16 border-2 border-green-100">
+                        <AvatarImage src={doctorData.image || "/placeholder.svg"} alt={`Dr. ${doctorData.name}`} />
+                        <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                          {doctorData.name.split(' ').map(n => n[0]).join('')}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-medium text-green-800 text-lg">Dr. {doctorData.name}</h3>
+                        <p className="text-sm text-green-600">{doctorData.specialization}</p>
+                        <div className="flex items-center mt-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <svg 
+                              key={star} 
+                              className={`w-4 h-4 ${star <= Math.round(doctorData.rating) ? 'text-yellow-500 fill-current' : 'text-gray-300'}`} 
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z" />
+                            </svg>
+                          ))}
+                          <span className="text-xs text-green-600 ml-1">({doctorData.reviewCount} reviews)</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-green-50 p-2 rounded-md">
+                        <p className="text-green-600 font-medium">Experience</p>
+                        <p className="text-green-800">{doctorData.experience}</p>
+                      </div>
+                      <div className="bg-green-50 p-2 rounded-md">
+                        <p className="text-green-600 font-medium">Languages</p>
+                        <p className="text-green-800">{doctorData.languages.join(', ')}</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-green-600">
+                    Could not load doctor information
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+      </motion.div>
     </div>
   )
 }

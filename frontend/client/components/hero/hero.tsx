@@ -52,9 +52,21 @@ export default function Hero() {
                 Start Free Trial
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="text-green-600 border-green-500 hover:bg-green-500/20">
-              <Stethoscope className="mr-2 h-5 w-5" />
-              Book Demo
+            <Button
+              size="lg"
+              variant="outline"
+              className="text-green-600 border-green-500 hover:bg-green-500/20"
+              onClick={() => {
+              const link = document.createElement('a')
+              link.href = '/app-release.apk'
+              link.download = 'DocEase.apk'
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
+              }}
+            >
+              <FileText className="mr-2 h-5 w-5" />
+              Download App
             </Button>
           </motion.div>
         </div>
