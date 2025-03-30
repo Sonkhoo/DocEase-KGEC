@@ -22,7 +22,7 @@ llm = ChatGroq(model="llama-3.3-70b-versatile", groq_api_key=GROQ_API)
 
 # MongoDB Connection
 MONGO_URI = "mongodb+srv://sankhadeepchowdhury5:kLQVjGEATqicK1fk@cluster0.mox78.mongodb.net"
-DB_NAME = "Diversion"
+DB_NAME = "DocEase"
 
 client = AsyncIOMotorClient(MONGO_URI)
 db = client[DB_NAME]
@@ -175,7 +175,7 @@ async def search_doctor(name: str = Query(None), specialty: str = Query(None)):
     
     return {"response": "Please provide a name or specialty to search."}
 
-# Run FastAPI Server on Port 5000
+# Run FastAPI Server on Port 5173
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=5000, log_level="info")
+    uvicorn.run("app:app", host="127.0.0.1", port=5173, log_level="info")

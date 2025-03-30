@@ -24,6 +24,13 @@ const config: HardhatUserConfig = {
       url: `https://polygon-amoy.infura.io/v3/${process.env.INFURA_API_KEY}`,
       accounts: [`0x${process.env.PRIVATE_KEY}`],
     },
+    fuji: {
+      url: "https://api.avax-test.network/ext/bc/C/rpc",
+      accounts: [`0x${process.env.PRIVATE_KEY}`],
+      chainId: 43113,
+      gasPrice: 225000000000,
+      timeout: 60000 // Increase timeout to 60 seconds
+    },
   },
 };
 

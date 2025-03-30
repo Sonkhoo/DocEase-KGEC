@@ -36,7 +36,7 @@ export default function FloatingChatButton() {
     setIsTyping(true)
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/chat/?query=${encodeURIComponent(message)}`)
+      const response = await fetch(`http://127.0.0.1:5173/chat/?query=${encodeURIComponent(message)}`)
       const data = await response.json()
 
       setTimeout(() => {
