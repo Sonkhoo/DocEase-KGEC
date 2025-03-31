@@ -64,12 +64,19 @@ export default function PrescriptionViewer() {
   useEffect(() => {
     const init = async () => {
       if (window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const signer = await provider.getSigner()
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, contractabi, signer)
-        setProvider(provider)
-        setSigner(signer)
-        setContract(contract)
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum)
+          const signer = await provider.getSigner()
+          const contract = new ethers.Contract(CONTRACT_ADDRESS, contractabi, signer)
+          setProvider(provider)
+          setSigner(signer)
+          setContract(contract)
+        } catch (err) {
+          console.error("Error initializing web3:", err)
+          setError("Failed to connect to the blockchain. Please make sure you have MetaMask installed and connected.")
+        }
+      } else {
+        setError("Web3 provider not found. Please install MetaMask to use this feature.")
       }
     }
     init()
@@ -84,21 +91,42 @@ export default function PrescriptionViewer() {
         setLoading(true)
         setError(null)
 
-        const listedPrescriptions = await contract.getAllListedNFTs()
+        // Check if getAllListedNFTs exists in contract
+        let listedPrescriptions = []
+        try {
+          listedPrescriptions = await contract.getAllListedNFTs()
+        } catch (err) {
+          console.warn("Error calling getAllListedNFTs:", err)
+          // Fallback to empty array if error
+          listedPrescriptions = []
+        }
+
+        if (!listedPrescriptions || listedPrescriptions.length === 0) {
+          setPrescriptions([])
+          setLoading(false)
+          return
+        }
+
         const prescriptionsData = await Promise.all(
           listedPrescriptions.map(async (prescription: ListedPrescription) => {
-            const tokenURI = await contract.tokenURI(prescription.tokenId)
-            if (!tokenURI) throw new Error(`No URI found for token ${prescription.tokenId}`)
+            try {
+              const tokenURI = await contract.tokenURI(prescription.tokenId)
+              if (!tokenURI) return null
 
-            const metadata = await fetchPrescriptionMetadata(prescription.tokenId, tokenURI)
-            return {
-              ...metadata,
-              price: ethers.formatEther(prescription.price) + ' ETH',
+              const metadata = await fetchPrescriptionMetadata(prescription.tokenId, tokenURI)
+              return {
+                ...metadata,
+                price: ethers.formatEther(prescription.price) + ' ETH',
+              }
+            } catch (err) {
+              console.error(`Error processing prescription ${prescription.tokenId}:`, err)
+              return null
             }
           })
         )
 
-        setPrescriptions(prescriptionsData)
+        // Filter out null entries
+        setPrescriptions(prescriptionsData.filter(Boolean) as PrescriptionWithPrice[])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred while fetching prescriptions')
         console.error('Error fetching prescription details:', err)

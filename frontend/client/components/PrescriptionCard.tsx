@@ -34,6 +34,8 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
     medications: [{ name: "", dosage: "" }] as MedicationItem[],
     prescriptionImage: null as File | null,
   })
+  const [isUploading, setIsUploading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, files } = e.target
@@ -135,29 +137,38 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
     e.preventDefault()
 
     if (!isConnected) {
-      alert("Please connect your wallet first!")
+      setErrorMessage("Please connect your wallet first!")
+      return
+    }
+
+    // Check if contract address is valid
+    if (!contractAddress || contractAddress === '0x' || contractAddress === '0x0000000000000000000000000000000000000000') {
+      setErrorMessage("Invalid contract address. Please check your configuration.")
       return
     }
 
     // Validate medications
     const validMedications = form.medications.filter(med => med.name.trim() !== "" && med.dosage.trim() !== "")
     if (validMedications.length === 0) {
-      alert("Please add at least one medication with dosage.")
+      setErrorMessage("Please add at least one medication with dosage.")
       return
     }
 
     try {
+      setIsUploading(true)
+      setErrorMessage(null)
+      
       // Step 1: Upload the prescription image file
       const imageHash = await uploadImageToPinata()
       if (!imageHash) {
-        alert("Prescription image upload failed.")
+        setErrorMessage("Prescription image upload failed.")
         return
       }
       
       // Step 2: Upload the metadata (including patient name, doctor name, medications, and image reference)
       const tokenURI = await uploadMetadataToPinata(imageHash)
       if (!tokenURI) {
-        alert("Prescription metadata upload failed.")
+        setErrorMessage("Prescription metadata upload failed.")
         return
       }
 
@@ -175,7 +186,9 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
       }
     } catch (error) {
       console.error("Error creating prescription:", error)
-      alert("An error occurred while creating the prescription.")
+      setErrorMessage("An error occurred while creating the prescription.")
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -284,15 +297,20 @@ export function PrescriptionCard({ onSubmit, className }: PrescriptionCardProps)
                 />
               </div>
             </div>
+            {errorMessage && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-600">
+                {errorMessage}
+              </div>
+            )}
             {!isConnected ? (
               <Button onClick={() => alert("Connect your wallet first!")} className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white">Connect Wallet</Button>
             ) : (
               <Button 
                 type="submit" 
-                className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
-                disabled={isTransactionLoading}
+                className="w-full mt-6 bg-gradient-to-r from-green-400 to-green-600 hover:from-green-500 hover:to-green-700 text-white transition-all duration-300"
+                disabled={isUploading}
               >
-                {isTransactionLoading ? "Creating Prescription..." : "Create Prescription"}
+                {isUploading ? "Creating Prescription..." : "Create Prescription"}
               </Button>
             )}
           </form>
